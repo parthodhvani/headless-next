@@ -1019,7 +1019,7 @@ export default function HomePage() {
       {/* ════════════
           NAV
       ════════════ */}
-      <nav className={`ai-nav${scrolled ? " ai-nav--scrolled" : ""}`}>
+      {/* <nav className={`ai-nav${scrolled ? " ai-nav--scrolled" : ""}`}>
         <div className="ai-nav__logo-wrap">
           <a href="/">
             {headerLogoUrl
@@ -1049,7 +1049,7 @@ export default function HomePage() {
             <span /><span /><span />
           </button>
         </div>
-      </nav>
+      </nav> */}
 
       {/* Mobile menu */}
       <div className={`ai-nav__mobile${menuOpen ? " ai-nav__mobile--open" : ""}`}>
