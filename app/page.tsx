@@ -796,7 +796,8 @@ export default function HomePage() {
         .pricing-card__period{font-size:14px;color:var(--muted);}
         .pricing-card__features{list-style:none;display:flex;flex-direction:column;gap:12px;flex:1;}
         .pricing-card__feature{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);}
-        .pricing-card__feature::before{content:'✓';color:var(--cyan);font-weight:700;flex-shrink:0;}
+        .pricing-card__feature::before{content:'✓';color:var(--cyan);font-weight:700;fl.contact-card__link
+ex-shrink:0;}
         .pricing-card__btn{display:block;text-align:center;padding:13px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .2s;border:none;font-family:inherit;}
         .pricing-card__btn--default{background:var(--dark2);color:#fff;border:1px solid var(--border);}
         .pricing-card__btn--highlight{background:var(--grad);color:#fff;box-shadow:0 0 24px rgba(124,58,237,.4);}
