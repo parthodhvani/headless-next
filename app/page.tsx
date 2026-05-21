@@ -9,7 +9,7 @@ import { useEffect, useState, useRef } from "react";
 
 // const BASE = "https://wordpressvercel123.infinityfreeapp.com/headless";
 
-const BASE = "http://192.168.1.112/headless";
+const BASE = "https://speller-choking-twisted.ngrok-free.dev/headless";
 const PAGE_API    = `${BASE}/wp-json/wp/v2/pages/18`;
 const OPTIONS_API = `${BASE}/wp-json/custom/v1/options`;
 const MEDIA_API   = (id: number) => `${BASE}/wp-json/wp/v2/media/${id}`;
