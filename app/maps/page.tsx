@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 
 
 // const BASE = "http://192.168.1.112/headless";
-const BASE = "https://speller-choking-twisted.ngrok-free.dev/headless";
+// const BASE = "https://speller-choking-twisted.ngrok-free.dev/headless";
+const BASE = "https://wordpressvercel123.infinityfreeapp.com/headless/";
 
 const PAGE_API = `${BASE}/wp-json/wp/v2/pages/256`;          
 const OPTIONS_API = `${BASE}/wp-json/custom/v1/options`;
