@@ -1211,7 +1211,13 @@ export default function ContactPage() {
                         </div>
                     </div>
                     <div className="globe-hero__3d">
-                        <Globe3D />
+                        <Globe3D
+                            locations={[
+                                { lat: 23.0225, lng: 72.5714, label: "Ahmedabad" },
+                                { lat: 40.7128, lng: -74.0060, label: "New York" },
+                                { lat: 51.5074, lng: -0.1278, label: "London" },
+                            ]}
+                        />
                         <div className="globe-hint">← Drag to rotate →</div>
                     </div>
                 </section>

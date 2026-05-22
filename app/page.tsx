@@ -552,7 +552,12 @@ export default function HomePage() {
 
   const [showPopup, setShowPopup] = useState(false);
 
-  const [user, setUser] = useState(null);
+  type User = {
+    name?: string
+    image?: string
+  }
+
+  const [user, setUser] = useState<User | null>(null)
 
   useEffect(() => {
 
@@ -2294,29 +2299,29 @@ ULTRA MODERN AI USER MENU
 
                 <div className="ai-user-menu__glow"></div>
 
-                <div className="ai-user-menu__avatar-wrap">
+              <div className="ai-user-menu__avatar-wrap">
 
-                  {user.image ? (
+                {user?.image ? (
 
-                    <img
-                      src={user.image}
-                      alt={user.name}
-                      className="ai-user-menu__avatar"
-                    />
+                  <img
+                    src={user.image}
+                    alt={user.name || "User"}
+                    className="ai-user-menu__avatar"
+                  />
 
-                  ) : (
+                ) : (
 
-                    <div className="ai-user-menu__avatar-fallback">
+                  <div className="ai-user-menu__avatar-fallback">
 
-                      {user.name?.charAt(0)}
+                    {user?.name?.charAt(0) || "U"}
 
-                    </div>
+                  </div>
 
-                  )}
+                )}
 
-                  <div className="ai-user-menu__status"></div>
+                <div className="ai-user-menu__status"></div>
 
-                </div>
+              </div>
 
                 <div className="ai-user-menu__meta">
 
@@ -2384,7 +2389,7 @@ ULTRA MODERN AI USER MENU
 
           onClose={() => setShowPopup(false)}
 
-          onSuccess={(data) => {
+          onSuccess={(data: User) => {
             setUser(data);
           }}
 
