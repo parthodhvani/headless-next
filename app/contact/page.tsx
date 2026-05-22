@@ -1,62 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import * as THREE from "three";
 
 /* ══════════════════════════════════════════════════════════════
    API ENDPOINTS
-   Update page ID (e.g. 25) to match your WordPress Contact page
 ══════════════════════════════════════════════════════════════ */
-// const BASE = "http://192.168.1.112/headless";
-// const BASE = "https://speller-choking-twisted.ngrok-free.dev/headless";
-// const BASE = "https://wordpressvercel123.infinityfreeapp.com/headless";
 const BASE = "http://192.168.1.112/headless";
-const PAGE_API = `${BASE}/wp-json/wp/v2/pages/251`;          // ← update page ID
+const PAGE_API = `${BASE}/wp-json/wp/v2/pages/251`;
 const OPTIONS_API = `${BASE}/wp-json/custom/v1/options`;
-
-/* ══════════════════════════════════════════════════════════════
-   ACF FIELD MAP — Contact Us page
-   ─────────────────────────────────────────────────────────────
-   Flexible Content field name: page_builder
-   Layouts:
-   ┌─────────────────────────────────────────────────────────────
-   │ contact_hero
-   │   heading           — "Let's Start a Conversation"
-   │   subheading        — supporting text
-   │   hero_badge        — badge text e.g. "24hr Response"
-   ├─────────────────────────────────────────────────────────────
-   │ contact_info
-   │   section_title     — "Get in Touch"
-   │   section_subtitle  — supporting copy
-   │   contact_cards[]   repeater
-   │     card_icon       — emoji
-   │     card_title      — "Email Us"
-   │     card_value      — "hello@site.com"
-   │     card_link       — "mailto:hello@site.com"
-   │     card_note       — "Response within 24 hrs"
-   ├─────────────────────────────────────────────────────────────
-   │ contact_form
-   │   form_title        — "Send Us a Message"
-   │   form_subtitle     — small helper text
-   │   (form fields are rendered as static HTML/React inputs;
-   │    wire submission to your WP REST form handler or CF7)
-   ├─────────────────────────────────────────────────────────────
-   │ contact_offices
-   │   section_title     — "Our Offices"
-   │   offices[]         repeater
-   │     office_city     — "Ahmedabad"
-   │     office_country  — "India"
-   │     office_address  — "123 SG Highway, Bodakdev"
-   │     office_phone    — "+91 79 1234 5678"
-   │     office_email    — "india@site.com"
-   │     office_flag     — emoji flag e.g. "🇮🇳"
-   ├─────────────────────────────────────────────────────────────
-   │ contact_faq
-   │   section_title     — "Quick Answers"
-   │   faq_items[]       repeater
-   │     faq_title       — question
-   │     faq_content     — answer
-   └─────────────────────────────────────────────────────────────
-══════════════════════════════════════════════════════════════ */
 
 interface NavItem { label: string; url: string; }
 interface SiteOptions {
@@ -93,7 +45,342 @@ function useReveal(deps: any[] = []) {
     }, deps);
 }
 
-/* ── CONTACT FORM COMPONENT ── */
+/* ══════════════════════════════════════════════════════════════
+   3D GLOBE COMPONENT — pure Three.js
+   Features: rotating earth mesh, atmosphere glow,
+   animated location markers, mouse drag interaction
+══════════════════════════════════════════════════════════════ */
+function Globe3D({ locations = [] }: { locations: { lat: number; lng: number; label: string }[] }) {
+    const mountRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const mount = mountRef.current;
+        if (!mount) return;
+
+        /* ── Renderer ── */
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(mount.clientWidth, mount.clientHeight);
+        mount.appendChild(renderer.domElement);
+
+        /* ── Scene & camera ── */
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 100);
+        camera.position.z = 3.2;
+
+        /* ── Lights ── */
+        const ambient = new THREE.AmbientLight(0x1a1a3e, 3);
+        scene.add(ambient);
+
+        const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+        sun.position.set(5, 3, 5);
+        scene.add(sun);
+
+        const cyanPoint = new THREE.PointLight(0x00f0ff, 4, 8);
+        cyanPoint.position.set(-3, 2, 3);
+        scene.add(cyanPoint);
+
+        const violetPoint = new THREE.PointLight(0x7c3aed, 3, 8);
+        violetPoint.position.set(3, -2, 2);
+        scene.add(violetPoint);
+
+        /* ── Globe group (rotates on drag) ── */
+        const globeGroup = new THREE.Group();
+        scene.add(globeGroup);
+
+        /* ── Earth sphere ── */
+        const earthGeo = new THREE.SphereGeometry(1, 64, 64);
+
+        // Build a canvas texture that looks like a dark stylized world map
+        const texCanvas = document.createElement("canvas");
+        texCanvas.width = 1024;
+        texCanvas.height = 512;
+        const tc = texCanvas.getContext("2d")!;
+
+        // Ocean base — very dark navy
+        tc.fillStyle = "#040d1f";
+        tc.fillRect(0, 0, 1024, 512);
+
+        // Draw stylized "land" blobs using seeded random positions
+        const landBlobs = [
+            { x: 250, y: 180, rx: 90, ry: 55 },  // North America
+            { x: 230, y: 290, rx: 55, ry: 65 },  // South America
+            { x: 500, y: 180, rx: 70, ry: 50 },  // Europe
+            { x: 560, y: 250, rx: 90, ry: 80 },  // Africa
+            { x: 680, y: 160, rx: 100, ry: 70 }, // Asia
+            { x: 780, y: 300, rx: 55, ry: 45 },  // Australia
+            { x: 512, y: 430, rx: 80, ry: 28 },  // Antarctica
+        ];
+
+        landBlobs.forEach(b => {
+            const g = tc.createRadialGradient(b.x, b.y, 0, b.x, b.y, Math.max(b.rx, b.ry));
+            g.addColorStop(0, "rgba(30,20,70,0.95)");
+            g.addColorStop(0.6, "rgba(20,15,50,0.85)");
+            g.addColorStop(1, "rgba(10,10,30,0)");
+            tc.fillStyle = g;
+            tc.beginPath();
+            tc.ellipse(b.x, b.y, b.rx, b.ry, 0, 0, Math.PI * 2);
+            tc.fill();
+        });
+
+        // Subtle grid lines
+        tc.strokeStyle = "rgba(124,58,237,0.06)";
+        tc.lineWidth = 0.5;
+        for (let lat = -90; lat <= 90; lat += 20) {
+            const y = ((90 - lat) / 180) * 512;
+            tc.beginPath(); tc.moveTo(0, y); tc.lineTo(1024, y); tc.stroke();
+        }
+        for (let lng = -180; lng <= 180; lng += 20) {
+            const x = ((lng + 180) / 360) * 1024;
+            tc.beginPath(); tc.moveTo(x, 0); tc.lineTo(x, 512); tc.stroke();
+        }
+
+        const earthTex = new THREE.CanvasTexture(texCanvas);
+        const earthMat = new THREE.MeshPhongMaterial({
+            map: earthTex,
+            specular: new THREE.Color(0x00f0ff),
+            specularMap: earthTex,
+            shininess: 15,
+            transparent: false,
+        });
+        const earth = new THREE.Mesh(earthGeo, earthMat);
+        globeGroup.add(earth);
+
+        /* ── Wireframe overlay ── */
+        const wireGeo = new THREE.SphereGeometry(1.002, 36, 18);
+        const wireMat = new THREE.MeshBasicMaterial({
+            color: 0x7c3aed,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.06,
+        });
+        globeGroup.add(new THREE.Mesh(wireGeo, wireMat));
+
+        /* ── Atmosphere glow (inner) ── */
+        const atmGeo = new THREE.SphereGeometry(1.08, 32, 32);
+        const atmMat = new THREE.MeshBasicMaterial({
+            color: 0x00f0ff,
+            transparent: true,
+            opacity: 0.05,
+            side: THREE.BackSide,
+        });
+        scene.add(new THREE.Mesh(atmGeo, atmMat));
+
+        /* ── Outer glow halo ── */
+        const haloGeo = new THREE.SphereGeometry(1.22, 32, 32);
+        const haloMat = new THREE.MeshBasicMaterial({
+            color: 0x7c3aed,
+            transparent: true,
+            opacity: 0.025,
+            side: THREE.BackSide,
+        });
+        scene.add(new THREE.Mesh(haloGeo, haloMat));
+
+        /* ── Helper: lat/lng → 3D position ── */
+        function latLngToVec3(lat: number, lng: number, r = 1): THREE.Vector3 {
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (lng + 180) * (Math.PI / 180);
+            return new THREE.Vector3(
+                -r * Math.sin(phi) * Math.cos(theta),
+                r * Math.cos(phi),
+                r * Math.sin(phi) * Math.sin(theta)
+            );
+        }
+
+        /* ── Location markers ── */
+        const defaultLocs = locations.length > 0 ? locations : [
+            { lat: 23.0, lng: 72.6, label: "Ahmedabad" },
+            { lat: 51.5, lng: -0.1, label: "London" },
+            { lat: 40.7, lng: -74.0, label: "New York" },
+            { lat: 35.7, lng: 139.7, label: "Tokyo" },
+            { lat: -33.9, lng: 151.2, label: "Sydney" },
+            { lat: 48.9, lng: 2.35, label: "Paris" },
+            { lat: 1.35, lng: 103.8, label: "Singapore" },
+        ];
+
+        const markerGroup = new THREE.Group();
+        globeGroup.add(markerGroup);
+
+        defaultLocs.forEach((loc) => {
+            const pos = latLngToVec3(loc.lat, loc.lng, 1.02);
+
+            // Ping ring
+            const ringGeo = new THREE.RingGeometry(0.012, 0.022, 16);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.copy(pos);
+            ring.lookAt(new THREE.Vector3(0, 0, 0));
+            ring.rotateX(Math.PI / 2);
+            markerGroup.add(ring);
+
+            // Dot center
+            const dotGeo = new THREE.SphereGeometry(0.012, 8, 8);
+            const dotMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
+            const dot = new THREE.Mesh(dotGeo, dotMat);
+            dot.position.copy(pos);
+            markerGroup.add(dot);
+
+            // Pulse ring (animated in loop)
+            const pulseGeo = new THREE.RingGeometry(0.02, 0.028, 16);
+            const pulseMat = new THREE.MeshBasicMaterial({ color: 0x7c3aed, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+            const pulse = new THREE.Mesh(pulseGeo, pulseMat);
+            pulse.position.copy(pos);
+            pulse.lookAt(new THREE.Vector3(0, 0, 0));
+            pulse.rotateX(Math.PI / 2);
+            pulse.userData.isPulse = true;
+            pulse.userData.basePos = pos.clone();
+            markerGroup.add(pulse);
+
+            // Connection line to center
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                pos,
+            ]);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x7c3aed, transparent: true, opacity: 0.15 });
+            const line = new THREE.Line(lineGeo, lineMat);
+            markerGroup.add(line);
+        });
+
+        /* ── Arc connections between cities ── */
+        function makeArc(a: THREE.Vector3, b: THREE.Vector3, color: number) {
+            const points: THREE.Vector3[] = [];
+            const segments = 60;
+            for (let i = 0; i <= segments; i++) {
+                const t = i / segments;
+                const p = new THREE.Vector3().lerpVectors(a, b, t).normalize();
+                const height = 1 + Math.sin(t * Math.PI) * 0.22;
+                points.push(p.multiplyScalar(height));
+            }
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35 });
+            return new THREE.Line(geo, mat);
+        }
+
+        const arcPairs = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 0], [0, 3]];
+        const arcColors = [0x00f0ff, 0x7c3aed, 0xa855f7, 0x00f0ff, 0x7c3aed, 0xa855f7, 0x00f0ff, 0xa855f7];
+        arcPairs.forEach(([a, b], i) => {
+            const posA = latLngToVec3(defaultLocs[a].lat, defaultLocs[a].lng);
+            const posB = latLngToVec3(defaultLocs[b].lat, defaultLocs[b].lng);
+            globeGroup.add(makeArc(posA, posB, arcColors[i]));
+        });
+
+        /* ── Stars background ── */
+        const starCount = 1200;
+        const starPos = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount * 3; i++) starPos[i] = (Math.random() - 0.5) * 60;
+        const starGeo = new THREE.BufferGeometry();
+        starGeo.setAttribute("position", new THREE.BufferAttribute(starPos, 3));
+        const starMat = new THREE.PointsMaterial({ size: 0.04, color: 0xffffff, transparent: true, opacity: 0.5 });
+        scene.add(new THREE.Points(starGeo, starMat));
+
+        /* ── Mouse drag ── */
+        let isDragging = false;
+        let prevX = 0, prevY = 0;
+        let rotX = 0, rotY = 0;
+        let velX = 0, velY = 0;
+
+        const onDown = (e: MouseEvent | TouchEvent) => {
+            isDragging = true;
+            const evt = "touches" in e ? e.touches[0] : e;
+            prevX = evt.clientX; prevY = evt.clientY;
+            velX = 0; velY = 0;
+        };
+        const onMove = (e: MouseEvent | TouchEvent) => {
+            if (!isDragging) return;
+            const evt = "touches" in e ? e.touches[0] : e;
+            const dx = evt.clientX - prevX;
+            const dy = evt.clientY - prevY;
+            velX = dx * 0.004;
+            velY = dy * 0.004;
+            rotY += dx * 0.004;
+            rotX += dy * 0.004;
+            prevX = evt.clientX; prevY = evt.clientY;
+        };
+        const onUp = () => { isDragging = false; };
+
+        renderer.domElement.addEventListener("mousedown", onDown);
+        renderer.domElement.addEventListener("touchstart", onDown as any, { passive: true });
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("touchmove", onMove as any, { passive: true });
+        window.addEventListener("mouseup", onUp);
+        window.addEventListener("touchend", onUp);
+
+        /* ── Resize ── */
+        const onResize = () => {
+            if (!mount) return;
+            camera.aspect = mount.clientWidth / mount.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(mount.clientWidth, mount.clientHeight);
+        };
+        window.addEventListener("resize", onResize);
+
+        /* ── Animation loop ── */
+        let raf: number;
+        let t = 0;
+
+        function animate() {
+            raf = requestAnimationFrame(animate);
+            t += 0.01;
+
+            if (!isDragging) {
+                velX *= 0.95;
+                velY *= 0.95;
+                rotY += 0.003 + velX * 0.1;
+                rotX += velY * 0.1;
+            }
+
+            globeGroup.rotation.y = rotY;
+            globeGroup.rotation.x = Math.max(-0.5, Math.min(0.5, rotX));
+
+            // Animate pulse markers
+            markerGroup.children.forEach((child) => {
+                if ((child as THREE.Mesh).userData?.isPulse) {
+                    const mesh = child as THREE.Mesh;
+                    const s = 1 + 0.6 * Math.abs(Math.sin(t * 1.5 + (mesh.userData.basePos?.x ?? 0)));
+                    mesh.scale.setScalar(s);
+                    (mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 - s * 0.25;
+                }
+            });
+
+            // Cyan light gentle orbit
+            cyanPoint.position.x = Math.cos(t * 0.3) * 3;
+            cyanPoint.position.z = Math.sin(t * 0.3) * 3;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        return () => {
+            cancelAnimationFrame(raf);
+            renderer.domElement.removeEventListener("mousedown", onDown);
+            renderer.domElement.removeEventListener("touchstart", onDown as any);
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("touchmove", onMove as any);
+            window.removeEventListener("mouseup", onUp);
+            window.removeEventListener("touchend", onUp);
+            window.removeEventListener("resize", onResize);
+            renderer.dispose();
+            if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+        };
+    }, []);
+
+    return (
+        <div
+            ref={mountRef}
+            style={{
+                width: "100%",
+                height: "100%",
+                cursor: "grab",
+                borderRadius: "50%",
+                overflow: "hidden",
+            }}
+        />
+    );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONTACT FORM
+══════════════════════════════════════════════════════════════ */
 function ContactForm({ title, subtitle }: { title: string; subtitle: string }) {
     const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
     const [sent, setSent] = useState(false);
@@ -107,7 +394,6 @@ function ContactForm({ title, subtitle }: { title: string; subtitle: string }) {
     const submit = async () => {
         if (!form.name || !form.email || !form.message) return;
         setBusy(true);
-        // Replace with your WP REST / CF7 endpoint
         await new Promise(r => setTimeout(r, 1200));
         setSent(true);
         setBusy(false);
@@ -125,15 +411,12 @@ function ContactForm({ title, subtitle }: { title: string; subtitle: string }) {
         <div className="cf-form">
             {title && <h3 className="cf-form__title">{title}</h3>}
             {subtitle && <p className="cf-form__sub">{subtitle}</p>}
-
-            {/* Topic pills */}
             <div className="cf-topics">
                 {topics.map(t => (
                     <button key={t} onClick={() => setTopic(t)}
                         className={`cf-topic-pill${t === topic ? " cf-topic-pill--active" : ""}`}>{t}</button>
                 ))}
             </div>
-
             <div className="cf-row">
                 <div className="cf-field">
                     <label className="cf-label">Your Name *</label>
@@ -151,7 +434,7 @@ function ContactForm({ title, subtitle }: { title: string; subtitle: string }) {
             <div className="cf-field">
                 <label className="cf-label">Message *</label>
                 <textarea className="cf-textarea" name="message" value={form.message} onChange={handle}
-                    placeholder="Tell us more about your project or question…" rows={5} />
+                    placeholder="Tell us more…" rows={5} />
             </div>
             <button className={`cf-submit${busy ? " cf-submit--busy" : ""}`} onClick={submit} disabled={busy}>
                 {busy ? <><span className="cf-submit__spinner" />Sending…</> : <>Send Message →</>}
@@ -160,7 +443,7 @@ function ContactForm({ title, subtitle }: { title: string; subtitle: string }) {
     );
 }
 
-/* ── FAQ ACCORDION ── */
+/* ── FAQ ── */
 function FaqAccordion({ items }: { items: any[] }) {
     const [open, setOpen] = useState<number | null>(0);
     return (
@@ -240,225 +523,32 @@ export default function ContactPage() {
 
     if (loading) {
         return (
-            <div
-                style={{
-                    position: "fixed",
-                    inset: 0,
-                    background:
-                        "radial-gradient(circle at center, #0f172a 0%, #020617 45%, #000 100%)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    overflow: "hidden",
-                    zIndex: 999999,
-                }}
-            >
-                {/* Ambient Glow */}
-                <div
-                    style={{
-                        position: "absolute",
-                        width: "500px",
-                        height: "500px",
-                        background: "rgba(34,211,238,0.08)",
-                        filter: "blur(120px)",
-                        borderRadius: "50%",
-                        animation: "pulseGlow 4s ease-in-out infinite",
-                    }}
-                />
-
-                {/* Main Loader */}
-                <div
-                    style={{
-                        position: "relative",
-                        width: "160px",
-                        height: "160px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                    }}
-                >
-                    {/* Outer Ring */}
-                    <div className="ring ring1" />
-
-                    {/* Middle Ring */}
-                    <div className="ring ring2" />
-
-                    {/* Inner Ring */}
-                    <div className="ring ring3" />
-
-                    {/* Orb */}
-                    <div className="core" />
-
-                    {/* Floating Particles */}
-                    <span className="particle p1" />
-                    <span className="particle p2" />
-                    <span className="particle p3" />
-                    <span className="particle p4" />
+            <div style={{ position: "fixed", inset: 0, background: "radial-gradient(circle at center,#0f172a 0%,#020617 45%,#000 100%)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", zIndex: 999999 }}>
+                <div style={{ position: "absolute", width: "500px", height: "500px", background: "rgba(34,211,238,0.08)", filter: "blur(120px)", borderRadius: "50%", animation: "pulseGlow 4s ease-in-out infinite" }} />
+                <div style={{ position: "relative", width: "160px", height: "160px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div className="ring ring1" /><div className="ring ring2" /><div className="ring ring3" /><div className="core" />
+                    <span className="particle p1" /><span className="particle p2" /><span className="particle p3" /><span className="particle p4" />
                 </div>
-
                 <style jsx>{`
-        .ring {
-          position: absolute;
-          border-radius: 50%;
-        }
-
-        .ring1 {
-          width: 160px;
-          height: 160px;
-          border: 2px solid rgba(34, 211, 238, 0.12);
-          border-top: 2px solid #22d3ee;
-          animation: spin 2s linear infinite;
-          box-shadow: 0 0 30px rgba(34, 211, 238, 0.2);
-        }
-
-        .ring2 {
-          width: 120px;
-          height: 120px;
-          border: 2px solid rgba(59, 130, 246, 0.12);
-          border-bottom: 2px solid #3b82f6;
-          animation: reverseSpin 3s linear infinite;
-        }
-
-        .ring3 {
-          width: 80px;
-          height: 80px;
-          border: 2px solid rgba(168, 85, 247, 0.12);
-          border-left: 2px solid #a855f7;
-          animation: spin 1.5s linear infinite;
-        }
-
-        .core {
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          background: linear-gradient(
-            135deg,
-            #22d3ee 0%,
-            #3b82f6 50%,
-            #a855f7 100%
-          );
-          box-shadow:
-            0 0 25px rgba(34, 211, 238, 0.9),
-            0 0 50px rgba(59, 130, 246, 0.5),
-            0 0 80px rgba(168, 85, 247, 0.3);
-          animation: pulse 2s ease-in-out infinite;
-        }
-
-        .particle {
-          position: absolute;
-          border-radius: 50%;
-          background: white;
-          opacity: 0.9;
-        }
-
-        .p1 {
-          width: 6px;
-          height: 6px;
-          top: 10px;
-          left: 50%;
-          animation: orbit1 3s linear infinite;
-        }
-
-        .p2 {
-          width: 4px;
-          height: 4px;
-          bottom: 20px;
-          right: 10px;
-          animation: orbit2 4s linear infinite;
-        }
-
-        .p3 {
-          width: 5px;
-          height: 5px;
-          left: 0;
-          top: 50%;
-          animation: orbit3 5s linear infinite;
-        }
-
-        .p4 {
-          width: 3px;
-          height: 3px;
-          right: 0;
-          top: 40%;
-          animation: orbit4 6s linear infinite;
-        }
-
-        @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes reverseSpin {
-          from {
-            transform: rotate(360deg);
-          }
-          to {
-            transform: rotate(0deg);
-          }
-        }
-
-        @keyframes pulse {
-          0%,
-          100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.35);
-          }
-        }
-
-        @keyframes pulseGlow {
-          0%,
-          100% {
-            transform: scale(1);
-            opacity: 0.6;
-          }
-          50% {
-            transform: scale(1.2);
-            opacity: 1;
-          }
-        }
-
-        @keyframes orbit1 {
-          0% {
-            transform: rotate(0deg) translateX(80px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg) translateX(80px) rotate(-360deg);
-          }
-        }
-
-        @keyframes orbit2 {
-          0% {
-            transform: rotate(0deg) translateX(60px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(-360deg) translateX(60px) rotate(360deg);
-          }
-        }
-
-        @keyframes orbit3 {
-          0% {
-            transform: rotate(0deg) translateX(100px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg) translateX(100px) rotate(-360deg);
-          }
-        }
-
-        @keyframes orbit4 {
-          0% {
-            transform: rotate(0deg) translateX(45px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(-360deg) translateX(45px) rotate(360deg);
-          }
-        }
-      `}</style>
+          .ring{position:absolute;border-radius:50%;}
+          .ring1{width:160px;height:160px;border:2px solid rgba(34,211,238,.12);border-top:2px solid #22d3ee;animation:spin 2s linear infinite;}
+          .ring2{width:120px;height:120px;border:2px solid rgba(59,130,246,.12);border-bottom:2px solid #3b82f6;animation:reverseSpin 3s linear infinite;}
+          .ring3{width:80px;height:80px;border:2px solid rgba(168,85,247,.12);border-left:2px solid #a855f7;animation:spin 1.5s linear infinite;}
+          .core{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#3b82f6,#a855f7);animation:pulse 2s ease-in-out infinite;}
+          .particle{position:absolute;border-radius:50%;background:white;opacity:.9;}
+          .p1{width:6px;height:6px;top:10px;left:50%;animation:orbit1 3s linear infinite;}
+          .p2{width:4px;height:4px;bottom:20px;right:10px;animation:orbit2 4s linear infinite;}
+          .p3{width:5px;height:5px;left:0;top:50%;animation:orbit3 5s linear infinite;}
+          .p4{width:3px;height:3px;right:0;top:40%;animation:orbit4 6s linear infinite;}
+          @keyframes spin{to{transform:rotate(360deg)}}
+          @keyframes reverseSpin{from{transform:rotate(360deg)}to{transform:rotate(0deg)}}
+          @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
+          @keyframes pulseGlow{0%,100%{transform:scale(1);opacity:.6}50%{transform:scale(1.2);opacity:1}}
+          @keyframes orbit1{0%{transform:rotate(0deg) translateX(80px) rotate(0deg)}100%{transform:rotate(360deg) translateX(80px) rotate(-360deg)}}
+          @keyframes orbit2{0%{transform:rotate(0deg) translateX(60px) rotate(0deg)}100%{transform:rotate(-360deg) translateX(60px) rotate(360deg)}}
+          @keyframes orbit3{0%{transform:rotate(0deg) translateX(100px) rotate(0deg)}100%{transform:rotate(360deg) translateX(100px) rotate(-360deg)}}
+          @keyframes orbit4{0%{transform:rotate(0deg) translateX(45px) rotate(0deg)}100%{transform:rotate(-360deg) translateX(45px) rotate(360deg)}}
+        `}</style>
             </div>
         );
     }
@@ -469,6 +559,32 @@ export default function ContactPage() {
 
     return (
         <>
+            <div className="global-ai-bg">
+
+                <div className="noise-layer" />
+
+                <div className="gradient-orb orb-a" />
+                <div className="gradient-orb orb-b" />
+                <div className="gradient-orb orb-c" />
+
+                <div className="grid-floor" />
+
+                <div className="mesh-lines mesh-1" />
+                <div className="mesh-lines mesh-2" />
+
+                {[...Array(70)].map((_, i) => (
+                    <span
+                        key={i}
+                        className="floating-particle"
+                        style={{
+                            left: `${Math.random() * 100}%`,
+                            top: `${Math.random() * 100}%`,
+                            animationDelay: `${i * 0.15}s`
+                        }}
+                    />
+                ))}
+
+            </div>
             <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Syne:wght@400;500;600;700;800&display=swap');
         *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
@@ -489,13 +605,11 @@ export default function ContactPage() {
         [data-reveal].revealed{opacity:1!important;transform:none!important;}
         [data-delay="100"]{transition-delay:.1s}[data-delay="200"]{transition-delay:.2s}[data-delay="300"]{transition-delay:.3s}[data-delay="400"]{transition-delay:.4s}
         .ai-loader{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--dark);gap:20px;}
-        .ai-loader__ring{width:48px;height:48px;border:2px solid rgba(124,58,237,.2);border-top-color:var(--violet);border-radius:50%;animation:spin .8s linear infinite;}
-        .ai-loader__text{font-size:13px;color:var(--muted);letter-spacing:.1em;}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.4}}
 
         /* NAV */
-        .ai-nav{position:sticky;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:0 48px;height:72px;transition:background .3s,box-shadow .3s;}
+        .ai-nav{position:sticky;top:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:0 48px;height:72px;transition:background .3s,box-shadow .3s;}
         .ai-nav--scrolled{background:rgba(3,7,18,.85);backdrop-filter:blur(24px) saturate(180%);box-shadow:0 1px 0 var(--border),0 4px 32px rgba(0,0,0,.4);}
         .ai-nav__logo-wrap{display:flex;align-items:center;gap:10px;flex-shrink:0;}
         .ai-nav__logo{height:36px;object-fit:contain;}
@@ -506,9 +620,9 @@ export default function ContactPage() {
         .ai-nav__right{display:flex;align-items:center;gap:12px;flex-shrink:0;}
         .ai-nav__ghost{background:transparent;color:rgba(255,255,255,.7);border:1px solid var(--border);border-radius:8px;padding:9px 20px;font-size:14px;font-weight:500;cursor:pointer;transition:color .2s,border-color .2s;font-family:inherit;}
         .ai-nav__ghost:hover{color:#fff;border-color:rgba(255,255,255,.2);}
-        .ai-nav__cta{position:relative;overflow:hidden;background:var(--grad);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 0 20px rgba(124,58,237,.3);transition:transform .2s,box-shadow .2s;font-family:inherit;display:flex;align-items:center;gap:6px;}
+        .ai-nav__cta{background:var(--grad);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 0 20px rgba(124,58,237,.3);transition:transform .2s,box-shadow .2s;font-family:inherit;display:flex;align-items:center;gap:6px;}
         .ai-nav__cta:hover{transform:translateY(-1px);box-shadow:0 0 32px rgba(124,58,237,.5);}
-        .ai-nav__cta-arrow{font-size:16px;transition:transform .2s;}
+        .ai-nav__cta-arrow{transition:transform .2s;}
         .ai-nav__cta:hover .ai-nav__cta-arrow{transform:translateX(3px);}
         .ai-nav__burger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px;background:none;border:none;}
         .ai-nav__burger span{display:block;width:22px;height:2px;background:#fff;border-radius:2px;transition:transform .3s,opacity .3s;}
@@ -518,7 +632,6 @@ export default function ContactPage() {
         .ai-nav__mobile{position:fixed;top:72px;left:0;right:0;z-index:199;background:rgba(3,7,18,.97);backdrop-filter:blur(24px);border-bottom:1px solid var(--border);padding:24px 24px 32px;transform:translateY(-110%);opacity:0;transition:transform .35s cubic-bezier(.22,1,.36,1),opacity .35s;pointer-events:none;}
         .ai-nav__mobile--open{transform:translateY(0);opacity:1;pointer-events:all;}
         .ai-nav__mobile-link{display:block;padding:14px 0;font-size:18px;font-weight:600;color:rgba(255,255,255,.7);border-bottom:1px solid var(--border);transition:color .2s;}
-        .ai-nav__mobile-link:last-child{border-bottom:none;}
         .ai-nav__mobile-link:hover{color:#fff;}
         .ai-nav__mobile-cta{display:block;margin-top:20px;background:var(--grad);color:#fff;border-radius:10px;padding:14px;text-align:center;font-size:16px;font-weight:700;}
 
@@ -530,32 +643,65 @@ export default function ContactPage() {
         .section-title span{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
         .section-sub{font-size:17px;color:var(--muted);line-height:1.75;max-width:540px;margin:0 0 56px;}
 
-        /* ══════════════════════════════════════════
-           CONTACT HERO
-        ══════════════════════════════════════════ */
-        .contact-hero{
-          position:relative;min-height:52vh;display:flex;align-items:center;justify-content:center;
-          text-align:center;padding:140px 48px 100px;overflow:hidden;
+        /* ══════════════════════
+           GLOBE HERO SECTION
+        ══════════════════════ */
+        .globe-hero{
+          position:relative;
+          min-height:85vh;
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          align-items:center;
+          padding:120px 48px 80px;
+          overflow:hidden;
           background:var(--dark);
+          gap:40px;
         }
-        .contact-hero__glow{position:absolute;top:0;left:50%;transform:translateX(-50%);width:80%;height:400px;background:radial-gradient(ellipse 60% 60% at 50% 0%,rgba(124,58,237,.3) 0%,transparent 70%);pointer-events:none;}
-        .contact-hero__grid{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 70% 70% at 50% 30%,black 0%,transparent 80%);}
-        .contact-hero__content{position:relative;z-index:2;max-width:700px;animation:heroIn 1s cubic-bezier(.22,1,.36,1) both;}
-        @keyframes heroIn{from{opacity:0;transform:translateY(32px)}to{opacity:1;transform:none}}
-        .contact-hero__badge{display:inline-flex;align-items:center;gap:8px;background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.25);color:var(--cyan);border-radius:100px;padding:7px 18px;font-size:13px;font-weight:500;margin-bottom:24px;}
-        .contact-hero__badge-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:pulse-dot 2s ease infinite;}
-        .contact-hero__h1{font-family:'Syne',sans-serif;font-size:clamp(38px,6vw,72px);font-weight:700;color:#fff;line-height:1.06;letter-spacing:-2.5px;margin:0 0 20px;}
-        .contact-hero__h1 span{background:var(--grad2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-        .contact-hero__sub{font-size:18px;color:var(--muted);line-height:1.75;}
+        .globe-hero__glow{position:absolute;top:0;left:0;width:60%;height:100%;background:radial-gradient(ellipse 60% 80% at 20% 50%,rgba(124,58,237,.2) 0%,transparent 70%);pointer-events:none;}
+        .globe-hero__grid{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 80% 70% at 30% 50%,black 0%,transparent 80%);}
 
-        /* ══════════════════════════════════════════
-           CONTACT INFO CARDS
-        ══════════════════════════════════════════ */
-        .contact-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;}
-        .contact-card{
-          background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:28px;
-          transition:transform .3s,border-color .3s,box-shadow .3s;position:relative;overflow:hidden;
+        .globe-hero__content{position:relative;z-index:2;animation:heroIn 1s cubic-bezier(.22,1,.36,1) both;}
+        @keyframes heroIn{from{opacity:0;transform:translateY(32px)}to{opacity:1;transform:none}}
+        .globe-hero__badge{display:inline-flex;align-items:center;gap:8px;background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.25);color:var(--cyan);border-radius:100px;padding:7px 18px;font-size:13px;font-weight:500;margin-bottom:24px;}
+        .globe-hero__badge-dot{width:6px;height:6px;border-radius:50%;background:var(--cyan);animation:pulse-dot 2s ease infinite;}
+        .globe-hero__h1{font-family:'Syne',sans-serif;font-size:clamp(38px,5.5vw,68px);font-weight:700;color:#fff;line-height:1.06;letter-spacing:-2.5px;margin:0 0 20px;}
+        .globe-hero__h1 span{background:var(--grad2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .globe-hero__sub{font-size:18px;color:var(--muted);line-height:1.75;margin-bottom:40px;}
+
+        /* Location chips under the globe */
+        .globe-hero__chips{display:flex;gap:8px;flex-wrap:wrap;}
+        .globe-hero__chip{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:100px;padding:6px 14px;font-size:12px;color:var(--muted);font-weight:500;}
+        .globe-hero__chip-dot{width:5px;height:5px;border-radius:50%;background:var(--cyan);}
+
+        /* Globe column */
+        .globe-hero__3d{
+          position:relative;z-index:2;
+          width:100%;
+          height:520px;
+          animation:heroIn 1s .2s cubic-bezier(.22,1,.36,1) both;
         }
+        /* Glow ring around globe */
+        .globe-hero__3d::before{
+          content:'';
+          position:absolute;
+          inset:-20px;
+          border-radius:50%;
+          background:radial-gradient(circle,rgba(0,240,255,.06) 0%,rgba(124,58,237,.06) 40%,transparent 70%);
+          pointer-events:none;
+          animation:globe-pulse 4s ease-in-out infinite;
+        }
+        @keyframes globe-pulse{0%,100%{transform:scale(1);opacity:.8}50%{transform:scale(1.05);opacity:1}}
+        /* Drag hint */
+        .globe-hint{
+          position:absolute;bottom:-32px;left:50%;transform:translateX(-50%);
+          font-size:11px;color:rgba(255,255,255,.25);letter-spacing:.08em;
+          display:flex;align-items:center;gap:6px;
+          white-space:nowrap;
+        }
+
+        /* Contact info */
+        .contact-info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;}
+        .contact-card{background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:28px;transition:transform .3s,border-color .3s,box-shadow .3s;position:relative;overflow:hidden;}
         .contact-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--grad);transform:scaleX(0);transform-origin:left;transition:transform .4s cubic-bezier(.22,1,.36,1);}
         .contact-card:hover{transform:translateY(-4px);border-color:rgba(124,58,237,.3);box-shadow:0 20px 60px rgba(124,58,237,.1);}
         .contact-card:hover::before{transform:scaleX(1);}
@@ -566,20 +712,15 @@ export default function ContactPage() {
         .contact-card__link:hover{color:#fff;}
         .contact-card__note{font-size:13px;color:var(--muted);}
 
-        /* ══════════════════════════════════════════
-           CONTACT FORM + SIDEBAR
-        ══════════════════════════════════════════ */
+        /* Contact form + sidebar */
         .contact-main{display:grid;grid-template-columns:1fr 380px;gap:48px;align-items:start;}
-        /* Form */
         .cf-form{background:var(--dark3);border:1px solid var(--border);border-radius:24px;padding:40px;}
         .cf-form__title{font-family:'Syne',sans-serif;font-size:24px;font-weight:700;color:#fff;letter-spacing:-.5px;margin-bottom:6px;}
         .cf-form__sub{font-size:14px;color:var(--muted);margin-bottom:28px;line-height:1.7;}
-        /* Topics */
         .cf-topics{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px;}
         .cf-topic-pill{background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--muted);border-radius:100px;padding:6px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:background .2s,border-color .2s,color .2s;font-family:inherit;}
         .cf-topic-pill:hover{background:rgba(124,58,237,.1);border-color:var(--border2);color:#fff;}
         .cf-topic-pill--active{background:rgba(124,58,237,.2);border-color:var(--border2);color:#fff;}
-        /* Fields */
         .cf-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
         .cf-field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
         .cf-field:last-child{margin-bottom:24px;}
@@ -592,12 +733,10 @@ export default function ContactPage() {
         .cf-submit:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 0 48px rgba(124,58,237,.5);}
         .cf-submit--busy{opacity:.7;}
         .cf-submit__spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
-        /* Success */
         .form-success{background:var(--dark3);border:1px solid rgba(0,240,255,.2);border-radius:24px;padding:64px 40px;text-align:center;}
         .form-success__icon{width:72px;height:72px;border-radius:50%;background:rgba(0,240,255,.1);border:2px solid var(--cyan);color:var(--cyan);font-size:28px;font-weight:700;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;}
         .form-success__title{font-family:'Syne',sans-serif;font-size:28px;font-weight:700;color:#fff;margin-bottom:10px;}
         .form-success__sub{font-size:16px;color:var(--muted);}
-        /* Sidebar */
         .contact-sidebar{display:flex;flex-direction:column;gap:24px;}
         .sidebar-card{background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:28px;}
         .sidebar-card__title{font-size:14px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px;}
@@ -606,19 +745,13 @@ export default function ContactPage() {
         .sidebar-social{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
         .sidebar-social-btn{width:40px;height:40px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--muted);transition:background .2s,border-color .2s,color .2s,transform .2s;text-decoration:none;}
         .sidebar-social-btn:hover{background:rgba(124,58,237,.15);border-color:var(--border2);color:#fff;transform:translateY(-2px);}
-        /* Status badge */
         .status-badge{display:flex;align-items:center;gap:10px;background:rgba(0,240,255,.06);border:1px solid rgba(0,240,255,.15);border-radius:12px;padding:12px 16px;margin-bottom:16px;}
         .status-badge__dot{width:8px;height:8px;border-radius:50%;background:var(--cyan);flex-shrink:0;animation:pulse-dot 2s ease infinite;}
         .status-badge__text{font-size:13px;color:var(--cyan);font-weight:500;}
 
-        /* ══════════════════════════════════════════
-           OFFICES
-        ══════════════════════════════════════════ */
+        /* Offices */
         .offices-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;}
-        .office-card{
-          background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:32px;
-          transition:transform .3s,border-color .3s,box-shadow .3s;
-        }
+        .office-card{background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:32px;transition:transform .3s,border-color .3s,box-shadow .3s;}
         .office-card:hover{transform:translateY(-4px);border-color:var(--border2);box-shadow:0 20px 60px rgba(124,58,237,.1);}
         .office-flag{font-size:36px;margin-bottom:16px;display:block;}
         .office-city{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:#fff;letter-spacing:-.5px;margin-bottom:2px;}
@@ -639,7 +772,7 @@ export default function ContactPage() {
         .faq-item--open .faq-a-wrap{max-height:400px;}
         .faq-a{padding:0 0 20px;font-size:15px;color:var(--muted);line-height:1.8;}
 
-        /* FOOTER */
+        /* Footer */
         .ai-footer{background:var(--dark4);border-top:1px solid var(--border);position:relative;overflow:hidden;}
         .ai-footer::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:60%;height:1px;background:linear-gradient(90deg,transparent,var(--violet),var(--cyan),var(--violet),transparent);}
         .ai-footer__grid-bg{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.03) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,black 0%,transparent 80%);pointer-events:none;}
@@ -676,19 +809,354 @@ export default function ContactPage() {
         .ai-footer__bottom-link{font-size:13px;color:rgba(255,255,255,.25);transition:color .2s;}
         .ai-footer__bottom-link:hover{color:var(--cyan);}
 
+        /* Map section */
+        .map-section{padding:100px 48px;}
+        .map-section__head{margin-bottom:50px;}
+        .map-section__grid{display:grid;grid-template-columns:60% 40%;gap:30px;align-items:stretch;}
+        .map-section__map-wrap{height:700px;border-radius:24px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:#111827;}
+        .map-section__map{width:100%;height:100%;border:none;}
+        .map-section__locations{height:700px;overflow:hidden;}
+        .map-location-slider{display:flex;flex-direction:column;gap:18px;height:100%;overflow-y:auto;padding-right:10px;}
+        .map-location-slider::-webkit-scrollbar{width:6px;}
+        .map-location-slider::-webkit-scrollbar-thumb{background:#7c3aed;border-radius:20px;}
+        .map-location-card{background:#111827;border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:24px;cursor:pointer;transition:all .3s ease;}
+        .map-location-card:hover{transform:translateY(-3px);border-color:#7c3aed;}
+        .map-location-card--active{border-color:#00f0ff;background:rgba(0,240,255,.06);}
+        .map-location-card__top{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px;}
+        .map-location-card__top h3{color:#fff;font-size:20px;font-weight:700;}
+        .map-location-card__info{display:flex;flex-direction:column;gap:10px;}
+        .map-location-card__info p{color:#94a3b8;line-height:1.7;}
+        .map-location-card__info a{color:#00f0ff;text-decoration:none;}
+
+         /* ═══════════════════════════════════════
+   GLOBAL AI CINEMATIC SYSTEM
+═══════════════════════════════════════ */
+
+.global-ai-bg{
+  position:fixed;
+  inset:0;
+
+  overflow:hidden;
+
+  pointer-events:none;
+
+  z-index:0;
+
+  background:
+    radial-gradient(circle at top left,
+    rgba(124,58,237,.18),
+    transparent 30%),
+
+    radial-gradient(circle at bottom right,
+    rgba(0,240,255,.12),
+    transparent 35%),
+
+    #030712;
+}
+
+/* NOISE */
+
+.noise-layer{
+  position:absolute;
+  inset:0;
+
+  opacity:.035;
+
+  background-image:url("https://grainy-gradients.vercel.app/noise.svg");
+
+  mix-blend-mode:soft-light;
+}
+
+/* GLOW ORBS */
+
+.gradient-orb{
+  position:absolute;
+  border-radius:50%;
+
+  filter:blur(140px);
+
+  opacity:.18;
+}
+
+.orb-a{
+  width:600px;
+  height:600px;
+
+  background:#7c3aed;
+
+  top:-10%;
+  left:-5%;
+
+  animation:orbFloatA 18s ease-in-out infinite;
+}
+
+.orb-b{
+  width:500px;
+  height:500px;
+
+  background:#00f0ff;
+
+  right:-5%;
+  top:30%;
+
+  animation:orbFloatB 20s ease-in-out infinite;
+}
+
+.orb-c{
+  width:400px;
+  height:400px;
+
+  background:#fb7185;
+
+  left:40%;
+  bottom:-10%;
+
+  opacity:.08;
+
+  animation:orbFloatC 24s ease-in-out infinite;
+}
+
+/* GRID */
+
+.grid-floor{
+  position:absolute;
+
+  inset:-20%;
+
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+
+  background-size:90px 90px;
+
+  transform:
+    perspective(1200px)
+    rotateX(78deg)
+    scale(2);
+
+  opacity:.25;
+
+  animation:gridDrift 20s linear infinite;
+}
+
+/* MESH */
+
+.mesh-lines{
+  position:absolute;
+
+  width:140%;
+  height:1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(0,240,255,.5),
+      transparent
+    );
+
+  filter:blur(.5px);
+
+  opacity:.4;
+}
+
+.mesh-1{
+  top:30%;
+
+  transform:rotate(-12deg);
+
+  animation:meshMove 10s linear infinite;
+}
+
+.mesh-2{
+  top:65%;
+
+  transform:rotate(8deg);
+
+  animation:meshMoveReverse 14s linear infinite;
+}
+
+/* PARTICLES */
+
+.floating-particle{
+  position:absolute;
+
+  width:3px;
+  height:3px;
+
+  border-radius:50%;
+
+  background:#00f0ff;
+
+  box-shadow:
+    0 0 10px rgba(0,240,255,.8),
+    0 0 20px rgba(0,240,255,.4);
+
+  opacity:.5;
+
+  animation:particleFloat 8s ease-in-out infinite;
+}
+
+/* GLASS EFFECT FOR SECTIONS */
+
+.about-hero,
+.ai-section,
+.about-cta,
+.ai-footer{
+  position:relative;
+  z-index:2;
+}
+
+/* OPTIONAL PREMIUM GLASS */
+
+.value-card,
+.team-card,
+.about-stat-card,
+.award-card{
+  backdrop-filter:blur(20px);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.04),
+      rgba(255,255,255,.015)
+    );
+
+  border:1px solid rgba(255,255,255,.08);
+
+  box-shadow:
+    0 10px 40px rgba(0,0,0,.3),
+    inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+/* ANIMATIONS */
+
+@keyframes orbFloatA{
+  0%,100%{
+    transform:
+      translate(0,0)
+      scale(1);
+  }
+
+  50%{
+    transform:
+      translate(80px,40px)
+      scale(1.1);
+  }
+}
+
+@keyframes orbFloatB{
+  0%,100%{
+    transform:
+      translate(0,0)
+      scale(1);
+  }
+
+  50%{
+    transform:
+      translate(-60px,-50px)
+      scale(1.15);
+  }
+}
+
+@keyframes orbFloatC{
+  0%,100%{
+    transform:
+      translate(0,0);
+  }
+
+  50%{
+    transform:
+      translate(0,-80px);
+  }
+}
+
+@keyframes gridDrift{
+  from{
+    transform:
+      perspective(1200px)
+      rotateX(78deg)
+      translateY(0)
+      scale(2);
+  }
+
+  to{
+    transform:
+      perspective(1200px)
+      rotateX(78deg)
+      translateY(120px)
+      scale(2);
+  }
+}
+
+@keyframes meshMove{
+  from{
+    transform:
+      translateX(-20%)
+      rotate(-12deg);
+  }
+
+  to{
+    transform:
+      translateX(20%)
+      rotate(-12deg);
+  }
+}
+
+@keyframes meshMoveReverse{
+  from{
+    transform:
+      translateX(20%)
+      rotate(8deg);
+  }
+
+  to{
+    transform:
+      translateX(-20%)
+      rotate(8deg);
+  }
+}
+
+@keyframes particleFloat{
+  0%,100%{
+    transform:
+      translateY(0)
+      scale(.6);
+
+    opacity:.2;
+  }
+
+  50%{
+    transform:
+      translateY(-40px)
+      scale(1.6);
+
+    opacity:1;
+  }
+}
+
+
         @media(max-width:1024px){
+          .globe-hero{grid-template-columns:1fr;text-align:center;padding-bottom:60px;}
+          .globe-hero__3d{height:380px;}
+          .globe-hero__chips{justify-content:center;}
           .contact-main{grid-template-columns:1fr;}
           .contact-sidebar{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
           .ai-footer__body{grid-template-columns:1fr 1fr;gap:36px;}
           .footer-brand{grid-column:1/-1;}
+          .map-section__grid{grid-template-columns:1fr;}
+          .map-section__map-wrap{height:400px;}
+          .map-section__locations{height:auto;}
+          .map-location-slider{overflow:visible;}
         }
         @media(max-width:768px){
           .ai-nav{padding:0 20px;} .ai-nav__center,.ai-nav__ghost{display:none;} .ai-nav__burger{display:flex;}
-          .ai-section{padding:72px 20px;} .contact-hero{padding:120px 24px 80px;}
+          .ai-section{padding:72px 20px;} .globe-hero{padding:100px 20px 60px;}
           .cf-row{grid-template-columns:1fr;} .contact-sidebar{grid-template-columns:1fr;}
           .ai-footer__body{grid-template-columns:1fr;padding:48px 24px 0;}
           .footer-brand{grid-column:auto;} .ai-footer__bottom{padding:20px 24px 32px;flex-direction:column;align-items:flex-start;}
           .ai-footer__divider{padding:0 24px;}
+          .map-section{padding:72px 20px;}
         }
       `}</style>
 
@@ -719,28 +1187,38 @@ export default function ContactPage() {
             </div>
 
             <main>
-                {sections.map((section, index) => {
+                {/* ── 3D GLOBE HERO — always shown on contact page ── */}
+                <section className="globe-hero">
+                    <div className="globe-hero__glow" />
+                    <div className="globe-hero__grid" />
+                    <div className="globe-hero__content">
+                        <div className="globe-hero__badge">
+                            <span className="globe-hero__badge-dot" />
+                            Worldwide Presence
+                        </div>
+                        <h1 className="globe-hero__h1">
+                            We're <span>Everywhere</span><br />You Need Us
+                        </h1>
+                        <p className="globe-hero__sub">
+                            Reach out to our global team and get a response in under 2 hours, no matter where you are.
+                        </p>
+                        <div className="globe-hero__chips">
+                            {["🇮🇳 Ahmedabad", "🇬🇧 London", "🇺🇸 New York", "🇯🇵 Tokyo", "🇦🇺 Sydney"].map(loc => (
+                                <span key={loc} className="globe-hero__chip">
+                                    <span className="globe-hero__chip-dot" />{loc}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="globe-hero__3d">
+                        <Globe3D />
+                        <div className="globe-hint">← Drag to rotate →</div>
+                    </div>
+                </section>
 
+                {sections.map((section, index) => {
                     /* ── CONTACT HERO ── */
-                    if (section.acf_fc_layout === "contact_hero") {
-                        return (
-                            <section key={index} className="contact-hero">
-                                <div className="contact-hero__glow" />
-                                <div className="contact-hero__grid" />
-                                <div className="contact-hero__content">
-                                    {section.hero_badge && (
-                                        <div className="contact-hero__badge">
-                                            <span className="contact-hero__badge-dot" />{section.hero_badge}
-                                        </div>
-                                    )}
-                                    <h1 className="contact-hero__h1">
-                                        {(() => { const w = (section.heading || "Let's Talk").split(" "); const l = w.pop(); return <>{w.join(" ")} <span>{l}</span></>; })()}
-                                    </h1>
-                                    <p className="contact-hero__sub">{section.subheading}</p>
-                                </div>
-                            </section>
-                        );
-                    }
+                    if (section.acf_fc_layout === "contact_hero") return null; // replaced by globe hero
 
                     /* ── CONTACT INFO ── */
                     if (section.acf_fc_layout === "contact_info") {
@@ -779,7 +1257,6 @@ export default function ContactPage() {
                                             <ContactForm title={section.form_title} subtitle={section.form_subtitle} />
                                         </div>
                                         <div className="contact-sidebar" data-reveal="fade-right">
-                                            {/* Online status */}
                                             <div className="sidebar-card">
                                                 <p className="sidebar-card__title">Status</p>
                                                 <div className="status-badge">
@@ -787,22 +1264,20 @@ export default function ContactPage() {
                                                     <span className="status-badge__text">All systems operational</span>
                                                 </div>
                                                 <p className="sidebar-card__body">
-                                                    Average response time: <strong>under 2 hours</strong><br />
+                                                    Average response: <strong>under 2 hours</strong><br />
                                                     Support hours: <strong>Mon–Fri, 9–6 IST</strong>
                                                 </p>
                                             </div>
-                                            {/* Social */}
                                             <div className="sidebar-card">
                                                 <p className="sidebar-card__title">Find us online</p>
-                                                <p className="sidebar-card__body" style={{ marginBottom: 0 }}>Reach us directly on social.</p>
+                                                <p className="sidebar-card__body" style={{ marginBottom: 0 }}>Reach us on social.</p>
                                                 <div className="sidebar-social">
-                                                    <a href="#" className="sidebar-social-btn" title="Twitter">𝕏</a>
-                                                    <a href="#" className="sidebar-social-btn" title="LinkedIn">in</a>
-                                                    <a href="#" className="sidebar-social-btn" title="GitHub">⌥</a>
-                                                    <a href="#" className="sidebar-social-btn" title="Discord">◈</a>
+                                                    <a href="#" className="sidebar-social-btn">𝕏</a>
+                                                    <a href="#" className="sidebar-social-btn">in</a>
+                                                    <a href="#" className="sidebar-social-btn">⌥</a>
+                                                    <a href="#" className="sidebar-social-btn">◈</a>
                                                 </div>
                                             </div>
-                                            {/* Quick links */}
                                             <div className="sidebar-card">
                                                 <p className="sidebar-card__title">Quick Help</p>
                                                 <div className="sidebar-card__body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -846,7 +1321,7 @@ export default function ContactPage() {
                         );
                     }
 
-                    /* ── CONTACT FAQ ── */
+                    /* ── FAQ ── */
                     if (section.acf_fc_layout === "contact_faq") {
                         return (
                             <div key={index} style={{ background: "var(--dark2)" }}>
@@ -888,15 +1363,12 @@ export default function ContactPage() {
                                 <ul className="footer-col__links">{col.links.map((lnk, li) => <li key={li}><a href={lnk.url} className="footer-col__link">{lnk.label}</a></li>)}</ul>
                             </div>
                         ))
-                        : [{ title: "Product", links: [["Features", "#"], ["Pricing", "#"]] },
-                        { title: "Company", links: [["About", "#"], ["Blog", "#"]] },
-                        { title: "Legal", links: [["Privacy", "#"], ["Terms", "#"]] }].map((col, ci) => (
+                        : [{ title: "Product", links: [["Features", "#"], ["Pricing", "#"]] }, { title: "Company", links: [["About", "#"], ["Blog", "#"]] }, { title: "Legal", links: [["Privacy", "#"], ["Terms", "#"]] }].map((col, ci) => (
                             <div key={ci} className="footer-col">
                                 <p className="footer-col__title">{col.title}</p>
                                 <ul className="footer-col__links">{col.links.map(([l, u], li) => <li key={li}><a href={u} className="footer-col__link">{l}</a></li>)}</ul>
                             </div>
-                        ))
-                    }
+                        ))}
                     <div className="footer-newsletter">
                         <p className="footer-newsletter__title">Stay Updated</p>
                         <p className="footer-newsletter__text">{opts?.footerNewsletter || "Get updates straight to your inbox."}</p>

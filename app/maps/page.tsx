@@ -426,6 +426,32 @@ export default function ContactPage() {
 
     return (
         <>
+        <div className="global-ai-bg">
+
+          <div className="noise-layer" />
+
+          <div className="gradient-orb orb-a" />
+          <div className="gradient-orb orb-b" />
+          <div className="gradient-orb orb-c" />
+
+          <div className="grid-floor" />
+
+          <div className="mesh-lines mesh-1" />
+          <div className="mesh-lines mesh-2" />
+
+          {[...Array(70)].map((_, i) => (
+            <span
+              key={i}
+              className="floating-particle"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `${Math.random() * 100}%`,
+                animationDelay: `${i * 0.15}s`
+              }}
+            />
+          ))}
+
+        </div>
             <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Syne:wght@400;500;600;700;800&display=swap');
         *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
@@ -633,20 +659,6 @@ export default function ContactPage() {
         .ai-footer__bottom-link{font-size:13px;color:rgba(255,255,255,.25);transition:color .2s;}
         .ai-footer__bottom-link:hover{color:var(--cyan);}
 
-        @media(max-width:1024px){
-          .contact-main{grid-template-columns:1fr;}
-          .contact-sidebar{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
-          .ai-footer__body{grid-template-columns:1fr 1fr;gap:36px;}
-          .footer-brand{grid-column:1/-1;}
-        }
-        @media(max-width:768px){
-          .ai-nav{padding:0 20px;} .ai-nav__center,.ai-nav__ghost{display:none;} .ai-nav__burger{display:flex;}
-          .ai-section{padding:72px 20px;} .contact-hero{padding:120px 24px 80px;}
-          .cf-row{grid-template-columns:1fr;} .contact-sidebar{grid-template-columns:1fr;}
-          .ai-footer__body{grid-template-columns:1fr;padding:48px 24px 0;}
-          .footer-brand{grid-column:auto;} .ai-footer__bottom{padding:20px 24px 32px;flex-direction:column;align-items:flex-start;}
-          .ai-footer__divider{padding:0 24px;}
-        }
 
    /* =========================
    MAP SECTION
@@ -788,6 +800,26 @@ export default function ContactPage() {
   }
 
 }
+              
+        
+
+        @media(max-width:1024px){
+          .contact-main{grid-template-columns:1fr;}
+          .contact-sidebar{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+          .ai-footer__body{grid-template-columns:1fr 1fr;gap:36px;}
+          .footer-brand{grid-column:1/-1;}
+        }
+        @media(max-width:768px){
+          .ai-nav{padding:0 20px;} .ai-nav__center,.ai-nav__ghost{display:none;} .ai-nav__burger{display:flex;}
+          .ai-section{padding:72px 20px;} .contact-hero{padding:120px 24px 80px;}
+          .cf-row{grid-template-columns:1fr;} .contact-sidebar{grid-template-columns:1fr;}
+          .ai-footer__body{grid-template-columns:1fr;padding:48px 24px 0;}
+          .footer-brand{grid-column:auto;} .ai-footer__bottom{padding:20px 24px 32px;flex-direction:column;align-items:flex-start;}
+          .ai-footer__divider{padding:0 24px;}
+        }
+
+
+
       `}</style>
 
             {/* NAV */}

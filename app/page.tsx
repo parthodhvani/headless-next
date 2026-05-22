@@ -1,57 +1,37 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
+import * as THREE from "three";
+import AuthPopup from "./components/AuthPopup";
 
 /* ══════════════════════════════════════════════════════════════
    API ENDPOINTS
 ══════════════════════════════════════════════════════════════ */
-// const BASE = "https://speller-choking-twisted.ngrok-free.dev/headless";
-
-// const BASE = "https://wordpressvercel123.infinityfreeapp.com/headless";
-
 const BASE = "http://192.168.1.112/headless";
-const PAGE_API    = `${BASE}/wp-json/wp/v2/pages/18`;
+const PAGE_API = `${BASE}/wp-json/wp/v2/pages/18`;
 const OPTIONS_API = `${BASE}/wp-json/custom/v1/options`;
-const MEDIA_API   = (id: number) => `${BASE}/wp-json/wp/v2/media/${id}`;
+const MEDIA_API = (id: number) => `${BASE}/wp-json/wp/v2/media/${id}`;
+
 
 /* ══════════════════════════════════════════════════════════════
    INTERFACES
 ══════════════════════════════════════════════════════════════ */
-interface AcfImage  { url: string; alt?: string; }
-interface AcfLink   { title: string; url: string; target: string; }
-interface NavItem   { label: string; url: string; }
+interface AcfImage { url: string; alt?: string; }
+interface AcfLink { title: string; url: string; target: string; }
+interface NavItem { label: string; url: string; }
 interface SiteOptions {
-  headerLogo:       AcfImage | null;
-  headerButton:     AcfLink  | null;
-  headerMenu:       NavItem[];
-  footerLogo:       AcfImage | null;
-  footerCopy:       string;
-  /* NEW footer ACF fields (Options page) ─────────────────────
-     footer_tagline         — short brand tagline under logo
-     footer_description     — 1-2 sentence brand blurb
-     footer_social[]        repeater
-       social_platform      — "Twitter" / "LinkedIn" / "GitHub" etc.
-       social_url           — https://…
-       social_icon          — SVG string or emoji
-     footer_columns[]       repeater
-       column_title         — "Company" / "Product" / "Legal"
-       column_links[]       repeater
-         link_label         — "About Us"
-         link_url           — /about
-     footer_newsletter_text — "Stay in the loop…"
-     footer_badge_text      — "SOC 2 Certified · GDPR Ready"
-  ─────────────────────────────────────────────────────────── */
-  footerTagline:    string;
-  footerDesc:       string;
-  footerSocial:     { platform: string; url: string; icon: string }[];
-  footerColumns:    { title: string; links: { label: string; url: string }[] }[];
+  headerLogo: AcfImage | null;
+  headerButton: AcfLink | null;
+  headerMenu: NavItem[];
+  footerLogo: AcfImage | null;
+  footerCopy: string;
+  footerTagline: string;
+  footerDesc: string;
+  footerSocial: { platform: string; url: string; icon: string }[];
+  footerColumns: { title: string; links: { label: string; url: string }[] }[];
   footerNewsletter: string;
-  footerBadge:      string;
-  /* NEW header ACF fields ────────────────────────────────────
-     header_announcement    — optional top-bar text (can be empty)
-     header_announcement_url— link for announcement
-  ─────────────────────────────────────────────────────────── */
-  headerAnnouncement:    string;
+  footerBadge: string;
+  headerAnnouncement: string;
   headerAnnouncementUrl: string;
 }
 
@@ -76,6 +56,7 @@ async function resolveMediaUrl(id: number | null | undefined): Promise<string> {
 function initials(name: string) {
   return (name || "").split(" ").filter(Boolean).map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 }
+;
 
 /* ══════════════════════════════════════════════════════════════
    SCROLL REVEAL
@@ -83,7 +64,7 @@ function initials(name: string) {
 function useReveal(deps: any[] = []) {
   useEffect(() => {
     const els = document.querySelectorAll("[data-reveal]");
-    const io  = new IntersectionObserver(
+    const io = new IntersectionObserver(
       (entries) => entries.forEach((e) => {
         if (e.isIntersecting) { e.target.classList.add("revealed"); io.unobserve(e.target); }
       }),
@@ -95,33 +76,290 @@ function useReveal(deps: any[] = []) {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   PARTICLE CANVAS
+   3D HERO CANVAS — pure Three.js (no R3F dependency needed)
+   Floating icosahedron + orbiting rings + particle field
+══════════════════════════════════════════════════════════════ */
+function HeroCanvas3D() {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const mouseRef = useRef({ x: 0, y: 0 });
+  const scrollRef = useRef(0);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+
+    /* ── Renderer ── */
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    mount.appendChild(renderer.domElement);
+
+    /* ── Scene ── */
+    const scene = new THREE.Scene();
+
+    /* ── Camera ── */
+    const camera = new THREE.PerspectiveCamera(60, mount.clientWidth / mount.clientHeight, 0.1, 100);
+    camera.position.set(0, 0, 5);
+
+    /* ── Lights ── */
+    const ambientLight = new THREE.AmbientLight(0x0d0d2b, 2);
+    scene.add(ambientLight);
+
+    const cyanLight = new THREE.PointLight(0x00f0ff, 8, 15);
+    cyanLight.position.set(3, 3, 3);
+    scene.add(cyanLight);
+
+    const violetLight = new THREE.PointLight(0x7c3aed, 8, 15);
+    violetLight.position.set(-3, -2, 2);
+    scene.add(violetLight);
+
+    const purpleLight = new THREE.PointLight(0xa855f7, 4, 10);
+    purpleLight.position.set(0, 4, -2);
+    scene.add(purpleLight);
+
+    /* ── Main Icosahedron ── */
+    const icoGeo = new THREE.IcosahedronGeometry(1.2, 1);
+    const icoMat = new THREE.MeshPhongMaterial({
+      color: 0x0d0d2b,
+      emissive: 0x1a0050,
+      emissiveIntensity: 0.4,
+      shininess: 80,
+      wireframe: false,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const ico = new THREE.Mesh(icoGeo, icoMat);
+    ico.castShadow = true;
+    scene.add(ico);
+
+    /* ── Wireframe overlay on icosahedron ── */
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0x7c3aed,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.25,
+    });
+    const wire = new THREE.Mesh(icoGeo.clone(), wireMat);
+    wire.scale.setScalar(1.01);
+    scene.add(wire);
+
+    /* ── Outer glow sphere ── */
+    const glowGeo = new THREE.SphereGeometry(1.55, 32, 32);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x7c3aed,
+      transparent: true,
+      opacity: 0.04,
+      side: THREE.BackSide,
+    });
+    const glowSphere = new THREE.Mesh(glowGeo, glowMat);
+    scene.add(glowSphere);
+
+    /* ── Rings ── */
+    function makeRing(radius: number, tube: number, color: number, opacity: number, tilt: number) {
+      const geo = new THREE.TorusGeometry(radius, tube, 6, 80);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = tilt;
+      scene.add(mesh);
+      return mesh;
+    }
+    const ring1 = makeRing(1.8, 0.012, 0x00f0ff, 0.6, Math.PI / 3);
+    const ring2 = makeRing(2.2, 0.008, 0x7c3aed, 0.5, -Math.PI / 5);
+    const ring3 = makeRing(2.7, 0.006, 0xa855f7, 0.35, Math.PI / 7);
+
+    /* ── Floating particles ── */
+    const particleCount = 280;
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+    const palette = [
+      new THREE.Color(0x00f0ff),
+      new THREE.Color(0x7c3aed),
+      new THREE.Color(0xa855f7),
+      new THREE.Color(0xfb7185),
+    ];
+
+    for (let i = 0; i < particleCount; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 3 + Math.random() * 4;
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+      const c = palette[Math.floor(Math.random() * palette.length)];
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    const pGeo = new THREE.BufferGeometry();
+    pGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    pGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const pMat = new THREE.PointsMaterial({ size: 0.035, vertexColors: true, transparent: true, opacity: 0.7 });
+    const particles = new THREE.Points(pGeo, pMat);
+    scene.add(particles);
+
+    /* ── Small orbiting satellites ── */
+    const satGeos = [
+      new THREE.OctahedronGeometry(0.12),
+      new THREE.TetrahedronGeometry(0.09),
+      new THREE.BoxGeometry(0.1, 0.1, 0.1),
+    ];
+    const satColors = [0x00f0ff, 0xa855f7, 0xfb7185];
+    const satellites: { mesh: THREE.Mesh; angle: number; speed: number; radius: number; height: number }[] = [];
+
+    satGeos.forEach((geo, i) => {
+      const mat = new THREE.MeshPhongMaterial({
+        color: satColors[i],
+        emissive: satColors[i],
+        emissiveIntensity: 0.5,
+        shininess: 120,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+      satellites.push({
+        mesh,
+        angle: (i / satGeos.length) * Math.PI * 2,
+        speed: 0.004 + i * 0.002,
+        radius: 1.9 + i * 0.3,
+        height: (Math.random() - 0.5) * 1.2,
+      });
+    });
+
+    /* ── Mouse + scroll ── */
+    const onMouse = (e: MouseEvent) => {
+      mouseRef.current.x = (e.clientX / window.innerWidth - 0.5) * 2;
+      mouseRef.current.y = (e.clientY / window.innerHeight - 0.5) * 2;
+    };
+    const onScroll = () => { scrollRef.current = window.scrollY; };
+    window.addEventListener("mousemove", onMouse);
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    /* ── Resize ── */
+    const onResize = () => {
+      if (!mount) return;
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", onResize);
+
+    /* ── Animation loop ── */
+    let raf: number;
+    let t = 0;
+
+    function animate() {
+      raf = requestAnimationFrame(animate);
+      t += 0.008;
+
+      const mx = mouseRef.current.x;
+      const my = mouseRef.current.y;
+
+      /* Icosahedron */
+      ico.rotation.x += 0.003;
+      ico.rotation.y += 0.005;
+      ico.position.y = Math.sin(t) * 0.12;
+      wire.rotation.x = ico.rotation.x;
+      wire.rotation.y = ico.rotation.y;
+      wire.position.y = ico.position.y;
+      glowSphere.position.y = ico.position.y;
+
+      /* Mouse tilt on scene group */
+      scene.rotation.y += (mx * 0.3 - scene.rotation.y) * 0.04;
+      scene.rotation.x += (-my * 0.15 - scene.rotation.x) * 0.04;
+
+      /* Rings */
+      ring1.rotation.z += 0.006;
+      ring2.rotation.z -= 0.004;
+      ring3.rotation.z += 0.003;
+      ring3.rotation.y += 0.002;
+
+      /* Particles slow drift */
+      particles.rotation.y += 0.0008;
+      particles.rotation.x += 0.0003;
+
+      /* Satellites orbit */
+      satellites.forEach((sat) => {
+        sat.angle += sat.speed;
+        sat.mesh.position.x = Math.cos(sat.angle) * sat.radius;
+        sat.mesh.position.z = Math.sin(sat.angle) * sat.radius;
+        sat.mesh.position.y = sat.height + Math.sin(t + sat.angle) * 0.2;
+        sat.mesh.rotation.x += 0.02;
+        sat.mesh.rotation.y += 0.015;
+      });
+
+      /* Pulsing glow */
+      const pulse = 0.03 + Math.sin(t * 2) * 0.01;
+      glowMat.opacity = pulse;
+
+      /* Scroll parallax */
+      const scrollFactor = scrollRef.current * 0.001;
+      camera.position.z = 5 + scrollFactor * 1.5;
+      camera.position.y = -scrollFactor * 0.5;
+
+      /* Cyan light orbit */
+      cyanLight.position.x = Math.cos(t * 0.5) * 4;
+      cyanLight.position.z = Math.sin(t * 0.5) * 4;
+      violetLight.position.x = Math.cos(t * 0.5 + Math.PI) * 4;
+      violetLight.position.z = Math.sin(t * 0.5 + Math.PI) * 4;
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("mousemove", onMouse);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      renderer.dispose();
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={mountRef}
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 2,
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PARTICLE CANVAS (background dots + lines)
 ══════════════════════════════════════════════════════════════ */
 function ParticleCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current; if (!canvas) return;
     const ctx = canvas.getContext("2d"); if (!ctx) return;
-    let W = canvas.width  = window.innerWidth;
+    let W = canvas.width = window.innerWidth;
     let H = canvas.height = window.innerHeight;
     let raf: number;
     const COLORS = ["#00f0ff", "#7c3aed", "#a855f7", "#06b6d4", "#f0abfc"];
-    const pts = Array.from({ length: 90 }, () => ({
+    const pts = Array.from({ length: 60 }, () => ({
       x: Math.random() * W, y: Math.random() * H,
-      r: Math.random() * 1.8 + 0.4,
-      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 1.4 + 0.3,
+      vx: (Math.random() - 0.5) * 0.2, vy: (Math.random() - 0.5) * 0.2,
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      alpha: Math.random() * 0.6 + 0.2,
+      alpha: Math.random() * 0.4 + 0.1,
     }));
     function draw() {
       ctx!.clearRect(0, 0, W, H);
       for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
         const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
         const d = Math.sqrt(dx * dx + dy * dy);
-        if (d < 130) {
+        if (d < 110) {
           ctx!.beginPath();
-          ctx!.strokeStyle = `rgba(124,58,237,${0.15 * (1 - d / 130)})`;
-          ctx!.lineWidth = 0.5;
+          ctx!.strokeStyle = `rgba(124,58,237,${0.1 * (1 - d / 110)})`;
+          ctx!.lineWidth = 0.4;
           ctx!.moveTo(pts[i].x, pts[i].y); ctx!.lineTo(pts[j].x, pts[j].y); ctx!.stroke();
         }
       }
@@ -140,7 +378,7 @@ function ParticleCanvas() {
     window.addEventListener("resize", onResize);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); };
   }, []);
-  return <canvas ref={ref} style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:1 }} />;
+  return <canvas ref={ref} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 1 }} />;
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -184,8 +422,8 @@ function TestimonialCards({ testimonials }: { testimonials: any[] }) {
       <div className="testi-card" key={active}>
         <div className="testi-card__glow" />
         <svg className="testi-quote-icon" width="36" height="28" viewBox="0 0 37 28" fill="none">
-          <path d="M0 28V17.5C0 7.833 5.167 2.167 15.5 0L17 3C13 4.333 10.5 6.5 9.5 9.5H16V28H0ZM20 28V17.5C20 7.833 25.167 2.167 35.5 0L37 3C33 4.333 30.5 6.5 29.5 9.5H36V28H20Z" fill="url(#qg)"/>
-          <defs><linearGradient id="qg" x1="0" y1="0" x2="37" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor="#7c3aed"/><stop offset="1" stopColor="#00f0ff"/></linearGradient></defs>
+          <path d="M0 28V17.5C0 7.833 5.167 2.167 15.5 0L17 3C13 4.333 10.5 6.5 9.5 9.5H16V28H0ZM20 28V17.5C20 7.833 25.167 2.167 35.5 0L37 3C33 4.333 30.5 6.5 29.5 9.5H36V28H20Z" fill="url(#qg)" />
+          <defs><linearGradient id="qg" x1="0" y1="0" x2="37" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor="#7c3aed" /><stop offset="1" stopColor="#00f0ff" /></linearGradient></defs>
         </svg>
         <p className="testi-card__text">{t.about_compney}</p>
         <div className="testi-card__author">
@@ -243,10 +481,10 @@ function YouTubeModal({ videoId, onClose }: { videoId: string; onClose: () => vo
 }
 
 /* ══════════════════════════════════════════════════════════════
-   NEWSLETTER SUBSCRIBE (footer widget)
+   NEWSLETTER
 ══════════════════════════════════════════════════════════════ */
 function NewsletterInput({ placeholder }: { placeholder: string }) {
-  const [val, setVal]   = useState("");
+  const [val, setVal] = useState("");
   const [done, setDone] = useState(false);
   return done
     ? <p className="nl-done">✓ You're on the list!</p>
@@ -260,17 +498,86 @@ function NewsletterInput({ placeholder }: { placeholder: string }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   3D FEATURE CARDS — tilt on hover
+══════════════════════════════════════════════════════════════ */
+function TiltCard({ children, className }: { children: React.ReactNode; className?: string }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const card = cardRef.current;
+    if (!card) return;
+    const rect = card.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    const rotX = ((y - cy) / cy) * -8;
+    const rotY = ((x - cx) / cx) * 8;
+    card.style.transform = `perspective(800px) rotateX(${rotX}deg) rotateY(${rotY}deg) translateY(-4px)`;
+    card.style.boxShadow = `${-rotY * 2}px ${rotX * 2}px 40px rgba(124,58,237,0.2)`;
+  };
+
+  const handleLeave = () => {
+    const card = cardRef.current;
+    if (!card) return;
+    card.style.transform = "perspective(800px) rotateX(0deg) rotateY(0deg) translateY(0)";
+    card.style.boxShadow = "";
+  };
+
+  return (
+    <div
+      ref={cardRef}
+      className={className}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      style={{ transition: "transform 0.1s ease, box-shadow 0.1s ease" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    MAIN COMPONENT
 ══════════════════════════════════════════════════════════════ */
 export default function HomePage() {
-  const [sections,  setSections]  = useState<any[]>([]);
-  const [opts,      setOpts]      = useState<SiteOptions | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
+  const [sections, setSections] = useState<any[]>([]);
+  const [opts, setOpts] = useState<SiteOptions | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [videoOpen, setVideoOpen] = useState(false);
-  const [scrolled,  setScrolled]  = useState(false);
-  const [menuOpen,  setMenuOpen]  = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
+  const [showPopup, setShowPopup] = useState(false);
+
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+
+    const saved = localStorage.getItem("aiUser");
+
+    if (saved) {
+      setUser(JSON.parse(saved));
+    }
+
+  }, []);
+  useEffect(() => {
+    const handleScroll = () => {
+      const scroll = window.scrollY;
+
+      document.documentElement.style.setProperty(
+        "--scrollY",
+        `${scroll}px`
+      );
+    };
+
+    window.addEventListener("scroll", handleScroll);
+
+    return () =>
+      window.removeEventListener("scroll", handleScroll);
+  }, [])
   const DEMO_VIDEO_ID = "xmu8YoktGGU";
 
   useReveal([sections]);
@@ -288,38 +595,31 @@ export default function HomePage() {
         const pageJson = await pageRes.json();
         const optsJson = await optsRes.json();
 
-        /* Parse footer columns */
         const footerColumns = Array.isArray(optsJson?.footer_columns)
           ? optsJson.footer_columns.map((col: any) => ({
-              title: col.column_title ?? "",
-              links: Array.isArray(col.column_links)
-                ? col.column_links.map((l: any) => ({ label: l.link_label ?? "", url: l.link_url ?? "#" }))
-                : [],
-            }))
+            title: col.column_title ?? "",
+            links: Array.isArray(col.column_links)
+              ? col.column_links.map((l: any) => ({ label: l.link_label ?? "", url: l.link_url ?? "#" }))
+              : [],
+          }))
           : [];
-
-        /* Parse footer social */
         const footerSocial = Array.isArray(optsJson?.footer_social)
-          ? optsJson.footer_social.map((s: any) => ({
-              platform: s.social_platform ?? "",
-              url:      s.social_url      ?? "#",
-              icon:     s.social_icon     ?? "🔗",
-            }))
+          ? optsJson.footer_social.map((s: any) => ({ platform: s.social_platform ?? "", url: s.social_url ?? "#", icon: s.social_icon ?? "🔗" }))
           : [];
 
         setOpts({
-          headerLogo:            optsJson?.header_logo         ?? null,
-          headerButton:          optsJson?.header_button        ?? null,
-          headerMenu:            parseMenuHtml(optsJson?.header_menu ?? ""),
-          footerLogo:            optsJson?.footer_logo          ?? null,
-          footerCopy:            optsJson?.footer_copy_right    ?? "",
-          footerTagline:         optsJson?.footer_tagline       ?? "",
-          footerDesc:            optsJson?.footer_description   ?? "",
+          headerLogo: optsJson?.header_logo ?? null,
+          headerButton: optsJson?.header_button ?? null,
+          headerMenu: parseMenuHtml(optsJson?.header_menu ?? ""),
+          footerLogo: optsJson?.footer_logo ?? null,
+          footerCopy: optsJson?.footer_copy_right ?? "",
+          footerTagline: optsJson?.footer_tagline ?? "",
+          footerDesc: optsJson?.footer_description ?? "",
           footerSocial,
           footerColumns,
-          footerNewsletter:      optsJson?.footer_newsletter_text ?? "",
-          footerBadge:           optsJson?.footer_badge_text    ?? "",
-          headerAnnouncement:    optsJson?.header_announcement     ?? "",
+          footerNewsletter: optsJson?.footer_newsletter_text ?? "",
+          footerBadge: optsJson?.footer_badge_text ?? "",
+          headerAnnouncement: optsJson?.header_announcement ?? "",
           headerAnnouncementUrl: optsJson?.header_announcement_url ?? "",
         });
 
@@ -348,225 +648,32 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background:
-            "radial-gradient(circle at center, #0f172a 0%, #020617 45%, #000 100%)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-          zIndex: 999999,
-        }}
-      >
-        {/* Ambient Glow */}
-        <div
-          style={{
-            position: "absolute",
-            width: "500px",
-            height: "500px",
-            background: "rgba(34,211,238,0.08)",
-            filter: "blur(120px)",
-            borderRadius: "50%",
-            animation: "pulseGlow 4s ease-in-out infinite",
-          }}
-        />
-
-        {/* Main Loader */}
-        <div
-          style={{
-            position: "relative",
-            width: "160px",
-            height: "160px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {/* Outer Ring */}
-          <div className="ring ring1" />
-
-          {/* Middle Ring */}
-          <div className="ring ring2" />
-
-          {/* Inner Ring */}
-          <div className="ring ring3" />
-
-          {/* Orb */}
-          <div className="core" />
-
-          {/* Floating Particles */}
-          <span className="particle p1" />
-          <span className="particle p2" />
-          <span className="particle p3" />
-          <span className="particle p4" />
+      <div style={{ position: "fixed", inset: 0, background: "radial-gradient(circle at center,#0f172a 0%,#020617 45%,#000 100%)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", zIndex: 999999 }}>
+        <div style={{ position: "absolute", width: "500px", height: "500px", background: "rgba(34,211,238,0.08)", filter: "blur(120px)", borderRadius: "50%", animation: "pulseGlow 4s ease-in-out infinite" }} />
+        <div style={{ position: "relative", width: "160px", height: "160px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="ring ring1" /><div className="ring ring2" /><div className="ring ring3" /><div className="core" />
+          <span className="particle p1" /><span className="particle p2" /><span className="particle p3" /><span className="particle p4" />
         </div>
-
         <style jsx>{`
-        .ring {
-          position: absolute;
-          border-radius: 50%;
-        }
-
-        .ring1 {
-          width: 160px;
-          height: 160px;
-          border: 2px solid rgba(34, 211, 238, 0.12);
-          border-top: 2px solid #22d3ee;
-          animation: spin 2s linear infinite;
-          box-shadow: 0 0 30px rgba(34, 211, 238, 0.2);
-        }
-
-        .ring2 {
-          width: 120px;
-          height: 120px;
-          border: 2px solid rgba(59, 130, 246, 0.12);
-          border-bottom: 2px solid #3b82f6;
-          animation: reverseSpin 3s linear infinite;
-        }
-
-        .ring3 {
-          width: 80px;
-          height: 80px;
-          border: 2px solid rgba(168, 85, 247, 0.12);
-          border-left: 2px solid #a855f7;
-          animation: spin 1.5s linear infinite;
-        }
-
-        .core {
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          background: linear-gradient(
-            135deg,
-            #22d3ee 0%,
-            #3b82f6 50%,
-            #a855f7 100%
-          );
-          box-shadow:
-            0 0 25px rgba(34, 211, 238, 0.9),
-            0 0 50px rgba(59, 130, 246, 0.5),
-            0 0 80px rgba(168, 85, 247, 0.3);
-          animation: pulse 2s ease-in-out infinite;
-        }
-
-        .particle {
-          position: absolute;
-          border-radius: 50%;
-          background: white;
-          opacity: 0.9;
-        }
-
-        .p1 {
-          width: 6px;
-          height: 6px;
-          top: 10px;
-          left: 50%;
-          animation: orbit1 3s linear infinite;
-        }
-
-        .p2 {
-          width: 4px;
-          height: 4px;
-          bottom: 20px;
-          right: 10px;
-          animation: orbit2 4s linear infinite;
-        }
-
-        .p3 {
-          width: 5px;
-          height: 5px;
-          left: 0;
-          top: 50%;
-          animation: orbit3 5s linear infinite;
-        }
-
-        .p4 {
-          width: 3px;
-          height: 3px;
-          right: 0;
-          top: 40%;
-          animation: orbit4 6s linear infinite;
-        }
-
-        @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes reverseSpin {
-          from {
-            transform: rotate(360deg);
-          }
-          to {
-            transform: rotate(0deg);
-          }
-        }
-
-        @keyframes pulse {
-          0%,
-          100% {
-            transform: scale(1);
-          }
-          50% {
-            transform: scale(1.35);
-          }
-        }
-
-        @keyframes pulseGlow {
-          0%,
-          100% {
-            transform: scale(1);
-            opacity: 0.6;
-          }
-          50% {
-            transform: scale(1.2);
-            opacity: 1;
-          }
-        }
-
-        @keyframes orbit1 {
-          0% {
-            transform: rotate(0deg) translateX(80px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg) translateX(80px) rotate(-360deg);
-          }
-        }
-
-        @keyframes orbit2 {
-          0% {
-            transform: rotate(0deg) translateX(60px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(-360deg) translateX(60px) rotate(360deg);
-          }
-        }
-
-        @keyframes orbit3 {
-          0% {
-            transform: rotate(0deg) translateX(100px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg) translateX(100px) rotate(-360deg);
-          }
-        }
-
-        @keyframes orbit4 {
-          0% {
-            transform: rotate(0deg) translateX(45px) rotate(0deg);
-          }
-          100% {
-            transform: rotate(-360deg) translateX(45px) rotate(360deg);
-          }
-        }
-      `}</style>
+          .ring{position:absolute;border-radius:50%;}
+          .ring1{width:160px;height:160px;border:2px solid rgba(34,211,238,0.12);border-top:2px solid #22d3ee;animation:spin 2s linear infinite;box-shadow:0 0 30px rgba(34,211,238,0.2);}
+          .ring2{width:120px;height:120px;border:2px solid rgba(59,130,246,0.12);border-bottom:2px solid #3b82f6;animation:reverseSpin 3s linear infinite;}
+          .ring3{width:80px;height:80px;border:2px solid rgba(168,85,247,0.12);border-left:2px solid #a855f7;animation:spin 1.5s linear infinite;}
+          .core{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#22d3ee 0%,#3b82f6 50%,#a855f7 100%);box-shadow:0 0 25px rgba(34,211,238,0.9),0 0 50px rgba(59,130,246,0.5),0 0 80px rgba(168,85,247,0.3);animation:pulse 2s ease-in-out infinite;}
+          .particle{position:absolute;border-radius:50%;background:white;opacity:0.9;}
+          .p1{width:6px;height:6px;top:10px;left:50%;animation:orbit1 3s linear infinite;}
+          .p2{width:4px;height:4px;bottom:20px;right:10px;animation:orbit2 4s linear infinite;}
+          .p3{width:5px;height:5px;left:0;top:50%;animation:orbit3 5s linear infinite;}
+          .p4{width:3px;height:3px;right:0;top:40%;animation:orbit4 6s linear infinite;}
+          @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+          @keyframes reverseSpin{from{transform:rotate(360deg)}to{transform:rotate(0deg)}}
+          @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
+          @keyframes pulseGlow{0%,100%{transform:scale(1);opacity:0.6}50%{transform:scale(1.2);opacity:1}}
+          @keyframes orbit1{0%{transform:rotate(0deg) translateX(80px) rotate(0deg)}100%{transform:rotate(360deg) translateX(80px) rotate(-360deg)}}
+          @keyframes orbit2{0%{transform:rotate(0deg) translateX(60px) rotate(0deg)}100%{transform:rotate(-360deg) translateX(60px) rotate(360deg)}}
+          @keyframes orbit3{0%{transform:rotate(0deg) translateX(100px) rotate(0deg)}100%{transform:rotate(360deg) translateX(100px) rotate(-360deg)}}
+          @keyframes orbit4{0%{transform:rotate(0deg) translateX(45px) rotate(0deg)}100%{transform:rotate(-360deg) translateX(45px) rotate(360deg)}}
+        `}</style>
       </div>
     );
   }
@@ -578,6 +685,33 @@ export default function HomePage() {
 
   return (
     <>
+
+      <div className="global-ai-bg">
+
+        <div className="noise-layer" />
+
+        <div className="gradient-orb orb-a" />
+        <div className="gradient-orb orb-b" />
+        <div className="gradient-orb orb-c" />
+
+        <div className="grid-floor" />
+
+        <div className="mesh-lines mesh-1" />
+        <div className="mesh-lines mesh-2" />
+
+        {[...Array(70)].map((_, i) => (
+          <span
+            key={i}
+            className="floating-particle"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              animationDelay: `${i * 0.15}s`
+            }}
+          />
+        ))}
+
+      </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Syne:wght@400;500;600;700;800&display=swap');
 
@@ -601,6 +735,7 @@ export default function HomePage() {
           --muted:   #94a3b8;
           --grad:    linear-gradient(135deg, #7c3aed 0%, #00f0ff 100%);
           --grad2:   linear-gradient(135deg, #fb7185 0%, #7c3aed 50%, #00f0ff 100%);
+          --scrollY:0px;
         }
 
         /* ── Scroll Reveal ── */
@@ -614,126 +749,99 @@ export default function HomePage() {
         [data-delay="400"]{transition-delay:.4s}[data-delay="500"]{transition-delay:.5s}
         [data-delay="600"]{transition-delay:.6s}
 
-        /* ── Loader ── */
-        .ai-loader{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--dark);gap:20px;}
-        .ai-loader__ring{width:48px;height:48px;border:2px solid rgba(124,58,237,.2);border-top-color:var(--violet);border-radius:50%;animation:spin .8s linear infinite;}
-        .ai-loader__text{font-size:13px;color:var(--muted);letter-spacing:.1em;}
-        @keyframes spin{to{transform:rotate(360deg)}}
-
         /* ══════════════════════════════════════════════════════
            ANNOUNCEMENT BAR
         ══════════════════════════════════════════════════════ */
-        .announce-bar{
-          background:linear-gradient(90deg,rgba(124,58,237,.15),rgba(0,240,255,.1),rgba(124,58,237,.15));
-          border-bottom:1px solid rgba(124,58,237,.2);
-          text-align:center;padding:10px 24px;font-size:13px;color:rgba(255,255,255,.75);
-          position:relative;z-index:201;letter-spacing:.02em;
-        }
+        .announce-bar{background:linear-gradient(90deg,rgba(124,58,237,.15),rgba(0,240,255,.1),rgba(124,58,237,.15));border-bottom:1px solid rgba(124,58,237,.2);text-align:center;padding:10px 24px;font-size:13px;color:rgba(255,255,255,.75);position:relative;z-index:201;letter-spacing:.02em;}
         .announce-bar a{color:var(--cyan);font-weight:600;margin-left:8px;}
         .announce-bar a:hover{text-decoration:underline;}
         .announce-bar__dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--cyan);margin-right:10px;animation:pulse-dot 2s ease infinite;vertical-align:middle;}
 
         /* ══════════════════════════════════════════════════════
-           NAVIGATION — improved
+           NAVIGATION
         ══════════════════════════════════════════════════════ */
-        .ai-nav{
-          position:sticky;top:0;left:0;right:0;z-index:200;
-          display:flex;align-items:center;justify-content:space-between;
-          padding:0 48px;height:72px;
-          transition:background .3s,box-shadow .3s,backdrop-filter .3s;
-        }
-        .ai-nav--scrolled{
-          background:rgba(3,7,18,.85);
-          backdrop-filter:blur(24px) saturate(180%);
-          box-shadow:0 1px 0 var(--border),0 4px 32px rgba(0,0,0,.4);
-        }
-        /* Logo */
+        .ai-nav{position:sticky;top:0;left:0;right:0;z-index:200;display:flex;align-items:center;justify-content:space-between;padding:0 48px;height:72px;transition:background .3s,box-shadow .3s,backdrop-filter .3s;}
+        .ai-nav--scrolled{background:rgba(3,7,18,.85);backdrop-filter:blur(24px) saturate(180%);box-shadow:0 1px 0 var(--border),0 4px 32px rgba(0,0,0,.4);}
         .ai-nav__logo-wrap{display:flex;align-items:center;gap:10px;flex-shrink:0;}
         .ai-nav__logo{height:36px;object-fit:contain;}
         .ai-nav__logo-text{font-family:'Syne',sans-serif;font-weight:700;font-size:22px;color:#fff;letter-spacing:-.5px;}
-        /* Links */
         .ai-nav__center{display:flex;align-items:center;gap:4px;list-style:none;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:100px;padding:4px 8px;}
-        .ai-nav__link{
-          font-size:14px;font-weight:500;color:var(--muted);
-          padding:7px 18px;border-radius:100px;
-          transition:color .2s,background .2s;white-space:nowrap;
-        }
+        .ai-nav__link{font-size:14px;font-weight:500;color:var(--muted);padding:7px 18px;border-radius:100px;transition:color .2s,background .2s;white-space:nowrap;}
         .ai-nav__link:hover{color:#fff;background:rgba(255,255,255,.07);}
-        .ai-nav__link--active{color:#fff;background:rgba(124,58,237,.2);}
-        /* Right side */
         .ai-nav__right{display:flex;align-items:center;gap:12px;flex-shrink:0;}
-        .ai-nav__ghost{
-          background:transparent;color:rgba(255,255,255,.7);
-          border:1px solid var(--border);border-radius:8px;
-          padding:9px 20px;font-size:14px;font-weight:500;cursor:pointer;
-          transition:color .2s,border-color .2s;font-family:inherit;
-        }
+        .ai-nav__ghost{background:transparent;color:rgba(255,255,255,.7);border:1px solid var(--border);border-radius:8px;padding:9px 20px;font-size:14px;font-weight:500;cursor:pointer;transition:color .2s,border-color .2s;font-family:inherit;}
         .ai-nav__ghost:hover{color:#fff;border-color:rgba(255,255,255,.2);}
-        .ai-nav__cta{
-          position:relative;overflow:hidden;
-          background:var(--grad);color:#fff;border:none;border-radius:8px;
-          padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;
-          box-shadow:0 0 20px rgba(124,58,237,.3);
-          transition:transform .2s,box-shadow .2s;font-family:inherit;
-          display:flex;align-items:center;gap:6px;
-        }
+        .ai-nav__cta{position:relative;overflow:hidden;background:var(--grad);color:#fff;border:none;border-radius:8px;padding:10px 22px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 0 20px rgba(124,58,237,.3);transition:transform .2s,box-shadow .2s;font-family:inherit;display:flex;align-items:center;gap:6px;}
         .ai-nav__cta:hover{transform:translateY(-1px);box-shadow:0 0 32px rgba(124,58,237,.5);}
         .ai-nav__cta-arrow{font-size:16px;transition:transform .2s;}
         .ai-nav__cta:hover .ai-nav__cta-arrow{transform:translateX(3px);}
-        /* Mobile burger */
         .ai-nav__burger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px;background:none;border:none;}
         .ai-nav__burger span{display:block;width:22px;height:2px;background:#fff;border-radius:2px;transition:transform .3s,opacity .3s;}
         .ai-nav__burger--open span:nth-child(1){transform:translateY(7px) rotate(45deg);}
         .ai-nav__burger--open span:nth-child(2){opacity:0;}
         .ai-nav__burger--open span:nth-child(3){transform:translateY(-7px) rotate(-45deg);}
-        /* Mobile menu */
-        .ai-nav__mobile{
-          position:fixed;top:72px;left:0;right:0;z-index:199;
-          background:rgba(3,7,18,.97);backdrop-filter:blur(24px);
-          border-bottom:1px solid var(--border);
-          padding:24px 24px 32px;
-          transform:translateY(-110%);opacity:0;
-          transition:transform .35s cubic-bezier(.22,1,.36,1),opacity .35s;
-          pointer-events:none;
-        }
+        .ai-nav__mobile{position:fixed;top:72px;left:0;right:0;z-index:199;background:rgba(3,7,18,.97);backdrop-filter:blur(24px);border-bottom:1px solid var(--border);padding:24px 24px 32px;transform:translateY(-110%);opacity:0;transition:transform .35s cubic-bezier(.22,1,.36,1),opacity .35s;pointer-events:none;}
         .ai-nav__mobile--open{transform:translateY(0);opacity:1;pointer-events:all;}
-        .ai-nav__mobile-link{
-          display:block;padding:14px 0;font-size:18px;font-weight:600;color:rgba(255,255,255,.7);
-          border-bottom:1px solid var(--border);transition:color .2s;
-        }
+        .ai-nav__mobile-link{display:block;padding:14px 0;font-size:18px;font-weight:600;color:rgba(255,255,255,.7);border-bottom:1px solid var(--border);transition:color .2s;}
         .ai-nav__mobile-link:last-child{border-bottom:none;}
         .ai-nav__mobile-link:hover{color:#fff;}
-        .ai-nav__mobile-cta{
-          display:block;margin-top:20px;background:var(--grad);color:#fff;
-          border-radius:10px;padding:14px;text-align:center;font-size:16px;font-weight:700;
-        }
+        .ai-nav__mobile-cta{display:block;margin-top:20px;background:var(--grad);color:#fff;border-radius:10px;padding:14px;text-align:center;font-size:16px;font-weight:700;}
 
-        /* ── HERO ── */
-        .hero{position:relative;min-height:100vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:120px 24px 100px;overflow:hidden;}
+        /* ══════════════════════════════════════════════════════
+           HERO — 3D enhanced
+        ══════════════════════════════════════════════════════ */
+        .hero{
+          position:relative;min-height:100vh;display:grid;
+          grid-template-columns:1fr 1fr;
+          align-items:center;
+          padding:120px 48px 100px;
+          overflow:hidden;
+          gap:40px;
+        }
         .hero__bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:brightness(.25) saturate(1.2);}
-        .hero__gradient{position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(124,58,237,.3) 0%,transparent 70%),linear-gradient(180deg,transparent 40%,var(--dark) 100%);}
+        .hero__gradient{position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 20% 50%,rgba(124,58,237,.25) 0%,transparent 60%),radial-gradient(ellipse 40% 60% at 80% 50%,rgba(0,240,255,.1) 0%,transparent 60%),linear-gradient(180deg,transparent 40%,var(--dark) 100%);}
         .hero__grid{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse 80% 60% at 50% 50%,black 0%,transparent 80%);}
-        .hero__content{position:relative;z-index:3;max-width:820px;animation:heroIn 1s cubic-bezier(.22,1,.36,1) both;}
+
+        /* Left text column */
+        .hero__content{position:relative;z-index:3;max-width:620px;animation:heroIn 1s cubic-bezier(.22,1,.36,1) both;}
         @keyframes heroIn{from{opacity:0;transform:translateY(32px)}to{opacity:1;transform:none}}
         .hero__badge{display:inline-flex;align-items:center;gap:8px;background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.35);color:var(--purple);border-radius:100px;padding:7px 18px;font-size:13px;font-weight:500;margin-bottom:28px;animation:heroIn 1s .1s cubic-bezier(.22,1,.36,1) both;}
         .hero__badge-dot{width:7px;height:7px;border-radius:50%;background:var(--purple);animation:pulse-dot 2s ease infinite;}
         @keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
-        .hero__h1{font-family:'Syne',sans-serif;font-size:clamp(42px,7vw,88px);font-weight:700;color:#fff;line-height:1.04;letter-spacing:-3px;margin:0 0 24px;animation:heroIn 1s .2s cubic-bezier(.22,1,.36,1) both;}
+        .hero__h1{font-family:'Syne',sans-serif;font-size:clamp(38px,5.5vw,76px);font-weight:700;color:#fff;line-height:1.04;letter-spacing:-3px;margin:0 0 24px;animation:heroIn 1s .2s cubic-bezier(.22,1,.36,1) both;}
         .hero__h1 span{background:var(--grad2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-        .hero__sub{font-size:clamp(16px,2vw,20px);color:var(--muted);line-height:1.7;max-width:540px;margin:0 auto 44px;animation:heroIn 1s .3s cubic-bezier(.22,1,.36,1) both;}
-        .hero__btns{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;animation:heroIn 1s .4s cubic-bezier(.22,1,.36,1) both;}
+        .hero__sub{font-size:clamp(15px,1.5vw,18px);color:var(--muted);line-height:1.7;max-width:480px;margin:0 0 44px;animation:heroIn 1s .3s cubic-bezier(.22,1,.36,1) both;}
+        .hero__btns{display:flex;gap:16px;flex-wrap:wrap;animation:heroIn 1s .4s cubic-bezier(.22,1,.36,1) both;}
         .hero__cta{position:relative;overflow:hidden;background:var(--grad);color:#fff;border:none;border-radius:10px;padding:15px 36px;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 0 32px rgba(124,58,237,.4);transition:transform .2s,box-shadow .2s;font-family:inherit;}
         .hero__cta:hover{transform:translateY(-2px);box-shadow:0 0 48px rgba(124,58,237,.6);}
         .hero__demo{display:inline-flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:10px;padding:15px 32px;font-size:16px;font-weight:600;cursor:pointer;transition:background .2s,border-color .2s;backdrop-filter:blur(8px);font-family:inherit;}
         .hero__demo:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.25);}
         .hero__play{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.15);display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;}
-        .hero__note {
-    margin-top: 28px;
-    font-size: 13px;
-    color: rgba(255, 255, 255, .3);
-    animation: heroIn 1s .5s cubic-bezier(.22, 1, .36, 1) both;
-    font-family: 'Syne';
-}
+        .hero__note{margin-top:24px;font-size:13px;color:rgba(255,255,255,.3);animation:heroIn 1s .5s cubic-bezier(.22,1,.36,1) both;font-family:'Syne';}
+
+        /* Right 3D column */
+        .hero__3d-col{
+          position:relative;z-index:3;
+          height:580px;
+          animation:heroIn 1s .2s cubic-bezier(.22,1,.36,1) both;
+        }
+
+        /* Floating stats around 3D object */
+        .hero__stat-float{
+          position:absolute;z-index:10;
+          background:rgba(10,15,26,.8);
+          border:1px solid rgba(124,58,237,.3);
+          border-radius:14px;
+          padding:12px 18px;
+          backdrop-filter:blur(16px);
+          animation:float-badge 3s ease-in-out infinite;
+          pointer-events:none;
+        }
+        .hero__stat-float:nth-child(2){animation-delay:-.8s;}
+        .hero__stat-float:nth-child(3){animation-delay:-1.6s;}
+        .hero__stat-float__num{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+        .hero__stat-float__label{font-size:11px;color:var(--muted);font-weight:500;}
+        @keyframes float-badge{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
 
         /* ── SECTION COMMONS ── */
         .ai-section{padding:100px 48px;max-width:1160px;margin:0 auto;}
@@ -755,9 +863,8 @@ export default function HomePage() {
 
         /* ── FEATURES ── */
         .features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;}
-        .feature-card{position:relative;overflow:hidden;background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:32px;transition:border-color .3s,transform .3s,box-shadow .3s;cursor:default;}
+        .feature-card{position:relative;overflow:hidden;background:var(--dark3);border:1px solid var(--border);border-radius:20px;padding:32px;cursor:default;will-change:transform;}
         .feature-card::before{content:'';position:absolute;inset:0;border-radius:20px;background:var(--grad);opacity:0;transition:opacity .3s;mask-image:linear-gradient(135deg,black 0%,transparent 60%);}
-        .feature-card:hover{border-color:rgba(124,58,237,.5);transform:translateY(-4px);box-shadow:0 20px 60px rgba(124,58,237,.12);}
         .feature-card:hover::before{opacity:.07;}
         .feature-card__num{font-family:'Syne',sans-serif;font-size:23px;font-weight:700;color:var(--violet);letter-spacing:.12em;margin-bottom:10px;display:block;}
         .feature-card__icon{font-size:32px;margin-bottom:16px;display:block;filter:drop-shadow(0 0 12px rgba(124,58,237,.5));}
@@ -796,8 +903,7 @@ export default function HomePage() {
         .pricing-card__period{font-size:14px;color:var(--muted);}
         .pricing-card__features{list-style:none;display:flex;flex-direction:column;gap:12px;flex:1;}
         .pricing-card__feature{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);}
-        .pricing-card__feature::before{content:'✓';color:var(--cyan);font-weight:700;fl.contact-card__link
-ex-shrink:0;}
+        .pricing-card__feature::before{content:'✓';color:var(--cyan);font-weight:700;flex-shrink:0;}
         .pricing-card__btn{display:block;text-align:center;padding:13px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:opacity .2s,transform .2s;border:none;font-family:inherit;}
         .pricing-card__btn--default{background:var(--dark2);color:#fff;border:1px solid var(--border);}
         .pricing-card__btn--highlight{background:var(--grad);color:#fff;box-shadow:0 0 24px rgba(124,58,237,.4);}
@@ -872,110 +978,39 @@ ex-shrink:0;}
         .cta-section__btn{display:inline-block;background:var(--grad);color:#fff;border:none;border-radius:12px;padding:16px 44px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 0 40px rgba(124,58,237,.5);transition:transform .2s,box-shadow .2s;font-family:inherit;}
         .cta-section__btn:hover{transform:translateY(-3px);box-shadow:0 0 60px rgba(124,58,237,.7);}
 
-        /* ══════════════════════════════════════════════════════
-           FOOTER — completely redesigned
-        ══════════════════════════════════════════════════════ */
-        .ai-footer{
-          background:var(--dark4);
-          border-top:1px solid var(--border);
-          position:relative;overflow:hidden;
-        }
-        /* top glow */
-        .ai-footer::before{
-          content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
-          width:60%;height:1px;
-          background:linear-gradient(90deg,transparent,var(--violet),var(--cyan),var(--violet),transparent);
-        }
-        /* subtle grid */
-        .ai-footer__grid-bg{
-          position:absolute;inset:0;
-          background-image:linear-gradient(rgba(124,58,237,.03) 1px,transparent 1px),
-                           linear-gradient(90deg,rgba(124,58,237,.03) 1px,transparent 1px);
-          background-size:48px 48px;
-          mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,black 0%,transparent 80%);
-          pointer-events:none;
-        }
-
-        /* main footer body */
-        .ai-footer__body{
-          position:relative;z-index:1;
-          max-width:1160px;margin:0 auto;
-          padding:64px 48px 0;
-          display:grid;
-          grid-template-columns:1.4fr repeat(3,1fr) 1.2fr;
-          gap:48px;
-        }
-
-        /* brand column */
-        .footer-brand{}
+        /* ── FOOTER ── */
+        .ai-footer{background:var(--dark4);border-top:1px solid var(--border);position:relative;overflow:hidden;}
+        .ai-footer::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:60%;height:1px;background:linear-gradient(90deg,transparent,var(--violet),var(--cyan),var(--violet),transparent);}
+        .ai-footer__grid-bg{position:absolute;inset:0;background-image:linear-gradient(rgba(124,58,237,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.03) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse 80% 60% at 50% 0%,black 0%,transparent 80%);pointer-events:none;}
+        .ai-footer__body{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:64px 48px 0;display:grid;grid-template-columns:1.4fr repeat(3,1fr) 1.2fr;gap:48px;}
         .footer-brand__logo{height:36px;object-fit:contain;margin-bottom:16px;display:block;}
         .footer-brand__logo-text{font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:#fff;margin-bottom:12px;display:block;letter-spacing:-.5px;}
-        .footer-brand__tagline{font-size:13px;font-weight:600;color:var(--cyan);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;}
+        .footer-brand__tagline{font-size:13px;font-weight:600;color:var(--cyan);letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;display:block;}
         .footer-brand__desc{font-size:14px;color:var(--muted);line-height:1.8;margin-bottom:24px;}
-        /* socials */
         .footer-socials{display:flex;gap:10px;flex-wrap:wrap;}
-        .footer-social-btn{
-          width:38px;height:38px;border-radius:10px;
-          background:rgba(255,255,255,.04);border:1px solid var(--border);
-          display:flex;align-items:center;justify-content:center;
-          font-size:16px;color:var(--muted);
-          transition:background .2s,border-color .2s,color .2s,transform .2s;
-          cursor:pointer;text-decoration:none;
-        }
+        .footer-social-btn{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--muted);transition:background .2s,border-color .2s,color .2s,transform .2s;cursor:pointer;text-decoration:none;}
         .footer-social-btn:hover{background:rgba(124,58,237,.15);border-color:var(--border2);color:#fff;transform:translateY(-2px);}
-
-        /* nav columns */
-        .footer-col{}
         .footer-col__title{font-size:12px;font-weight:700;color:#fff;letter-spacing:.12em;text-transform:uppercase;margin-bottom:20px;}
         .footer-col__links{list-style:none;display:flex;flex-direction:column;gap:12px;}
         .footer-col__link{font-size:14px;color:var(--muted);transition:color .2s;display:flex;align-items:center;gap:6px;}
         .footer-col__link:hover{color:#fff;}
         .footer-col__link::before{content:'';display:block;width:0;height:1px;background:var(--cyan);transition:width .2s;}
         .footer-col__link:hover::before{width:8px;}
-
-        /* newsletter column */
-        .footer-newsletter{}
         .footer-newsletter__title{font-size:12px;font-weight:700;color:#fff;letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px;}
         .footer-newsletter__text{font-size:14px;color:var(--muted);line-height:1.7;margin-bottom:20px;}
         .nl-form{display:flex;flex-direction:column;gap:10px;}
-        .nl-input{
-          background:rgba(255,255,255,.04);border:1px solid var(--border);
-          border-radius:8px;padding:11px 14px;font-size:14px;color:#fff;
-          font-family:inherit;outline:none;transition:border-color .2s,box-shadow .2s;
-        }
+        .nl-input{background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:8px;padding:11px 14px;font-size:14px;color:#fff;font-family:inherit;outline:none;transition:border-color .2s,box-shadow .2s;}
         .nl-input::placeholder{color:rgba(255,255,255,.25);}
         .nl-input:focus{border-color:var(--border2);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
-        .nl-btn{
-          background:var(--grad);color:#fff;border:none;border-radius:8px;
-          padding:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;
-          transition:opacity .2s,transform .2s;box-shadow:0 0 20px rgba(124,58,237,.25);
-        }
+        .nl-btn{background:var(--grad);color:#fff;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:opacity .2s,transform .2s;box-shadow:0 0 20px rgba(124,58,237,.25);}
         .nl-btn:hover{opacity:.9;transform:translateY(-1px);}
         .nl-done{font-size:14px;color:var(--cyan);font-weight:600;padding:12px 0;}
-
-        /* divider */
-        .ai-footer__divider{
-          position:relative;z-index:1;
-          max-width:1160px;margin:0 auto;padding:0 48px;
-          margin-top:48px;
-        }
+        .ai-footer__divider{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:0 48px;margin-top:48px;}
         .ai-footer__divider-line{height:1px;background:var(--border);}
-
-        /* bottom bar */
-        .ai-footer__bottom{
-          position:relative;z-index:1;
-          max-width:1160px;margin:0 auto;
-          padding:24px 48px 40px;
-          display:flex;align-items:center;justify-content:space-between;
-          gap:20px;flex-wrap:wrap;
-        }
+        .ai-footer__bottom{position:relative;z-index:1;max-width:1160px;margin:0 auto;padding:24px 48px 40px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
         .ai-footer__copy{font-size:13px;color:rgba(255,255,255,.25);}
         .ai-footer__badges{display:flex;gap:10px;flex-wrap:wrap;}
-        .ai-footer__badge{
-          font-size:11px;font-weight:600;color:rgba(255,255,255,.35);
-          border:1px solid rgba(255,255,255,.08);border-radius:6px;
-          padding:4px 12px;letter-spacing:.04em;
-        }
+        .ai-footer__badge{font-size:11px;font-weight:600;color:rgba(255,255,255,.35);border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:4px 12px;letter-spacing:.04em;}
         .ai-footer__bottom-links{display:flex;gap:20px;}
         .ai-footer__bottom-link{font-size:13px;color:rgba(255,255,255,.25);transition:color .2s;}
         .ai-footer__bottom-link:hover{color:var(--cyan);}
@@ -990,8 +1025,1218 @@ ex-shrink:0;}
         .modal-iframe-wrap{position:relative;padding-bottom:56.25%;height:0;}
         .modal-iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none;}
 
+
+         /* ═══════════════════════════════════════
+   GLOBAL AI CINEMATIC SYSTEM
+═══════════════════════════════════════ */
+
+.global-ai-bg{
+  position:fixed;
+  inset:0;
+
+  overflow:hidden;
+
+  pointer-events:none;
+
+  z-index:0;
+
+  background:
+    radial-gradient(circle at top left,
+    rgba(124,58,237,.18),
+    transparent 30%),
+
+    radial-gradient(circle at bottom right,
+    rgba(0,240,255,.12),
+    transparent 35%),
+
+    #030712;
+}
+
+/* NOISE */
+
+.noise-layer{
+  position:absolute;
+  inset:0;
+
+  opacity:.035;
+
+  background-image:url("https://grainy-gradients.vercel.app/noise.svg");
+
+  mix-blend-mode:soft-light;
+}
+
+/* GLOW ORBS */
+
+.gradient-orb{
+  position:absolute;
+  border-radius:50%;
+
+  filter:blur(140px);
+
+  opacity:.18;
+}
+
+.orb-a{
+  width:600px;
+  height:600px;
+
+  background:#7c3aed;
+
+  top:-10%;
+  left:-5%;
+
+  animation:orbFloatA 18s ease-in-out infinite;
+  transform:
+translateY(calc(var(--scrollY) * -0.08));
+}
+
+.orb-b{
+  width:500px;
+  height:500px;
+
+  background:#00f0ff;
+
+  right:-5%;
+  top:30%;
+
+  animation:orbFloatB 20s ease-in-out infinite;
+  transform:
+translateY(calc(var(--scrollY) * -0.14));
+}
+
+.orb-c{
+  width:400px;
+  height:400px;
+
+  background:#fb7185;
+
+  left:40%;
+  bottom:-10%;
+
+  opacity:.08;
+
+  animation:orbFloatC 24s ease-in-out infinite;
+  transform:
+translateY(calc(var(--scrollY) * -0.22));
+}
+
+/* GRID */
+
+.grid-floor{
+  position:absolute;
+
+  inset:-20%;
+
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+
+  background-size:90px 90px;
+
+  transform:
+    perspective(1200px)
+    rotateX(78deg)
+    scale(2);
+
+  opacity:.25;
+
+  animation:gridDrift 20s linear infinite;
+}
+
+/* MESH */
+
+.mesh-lines{
+  position:absolute;
+
+  width:140%;
+  height:1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(0,240,255,.5),
+      transparent
+    );
+
+  filter:blur(.5px);
+
+  opacity:.4;
+}
+
+.mesh-1{
+  top:30%;
+
+  transform:rotate(-12deg);
+
+  animation:meshMove 10s linear infinite;
+}
+
+.mesh-2{
+  top:65%;
+
+  transform:rotate(8deg);
+
+  animation:meshMoveReverse 14s linear infinite;
+}
+
+/* PARTICLES */
+
+.floating-particle{
+  position:absolute;
+
+  width:3px;
+  height:3px;
+
+  border-radius:50%;
+
+  background:#00f0ff;
+
+  box-shadow:
+    0 0 10px rgba(0,240,255,.8),
+    0 0 20px rgba(0,240,255,.4);
+
+  opacity:.5;
+
+  animation:particleFloat 8s ease-in-out infinite;
+}
+
+/* GLASS EFFECT FOR SECTIONS */
+
+.about-hero,
+.ai-section,
+.about-cta,
+.ai-footer{
+  position:relative;
+  z-index:2;
+}
+
+/* OPTIONAL PREMIUM GLASS */
+
+.value-card,
+.team-card,
+.about-stat-card,
+.award-card{
+  backdrop-filter:blur(20px);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.04),
+      rgba(255,255,255,.015)
+    );
+
+  border:1px solid rgba(255,255,255,.08);
+
+  box-shadow:
+    0 10px 40px rgba(0,0,0,.3),
+    inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+/* ANIMATIONS */
+
+@keyframes orbFloatA{
+  0%,100%{
+    transform:
+      translate(0,0)
+      scale(1);
+  }
+
+  50%{
+    transform:
+      translate(80px,40px)
+      scale(1.1);
+  }
+}
+
+@keyframes orbFloatB{
+  0%,100%{
+    transform:
+      translate(0,0)
+      scale(1);
+  }
+
+  50%{
+    transform:
+      translate(-60px,-50px)
+      scale(1.15);
+  }
+}
+
+@keyframes orbFloatC{
+  0%,100%{
+    transform:
+      translate(0,0);
+  }
+
+  50%{
+    transform:
+      translate(0,-80px);
+  }
+}
+
+@keyframes gridDrift{
+  from{
+    transform:
+      perspective(1200px)
+      rotateX(78deg)
+      translateY(0)
+      scale(2);
+  }
+
+  to{
+    transform:
+      perspective(1200px)
+      rotateX(78deg)
+      translateY(120px)
+      scale(2);
+  }
+}
+
+@keyframes meshMove{
+  from{
+    transform:
+      translateX(-20%)
+      rotate(-12deg);
+  }
+
+  to{
+    transform:
+      translateX(20%)
+      rotate(-12deg);
+  }
+}
+
+@keyframes meshMoveReverse{
+  from{
+    transform:
+      translateX(20%)
+      rotate(8deg);
+  }
+
+  to{
+    transform:
+      translateX(-20%)
+      rotate(8deg);
+  }
+}
+
+@keyframes particleFloat{
+  0%,100%{
+    transform:
+      translateY(0)
+      scale(.6);
+
+    opacity:.2;
+  }
+
+  50%{
+    transform:
+      translateY(-40px)
+      scale(1.6);
+
+    opacity:1;
+  }
+}
+/* ═══════════════════════════════════════
+ULTRA AUTH MODAL
+═══════════════════════════════════════ */
+
+.ultra-auth{
+  position: fixed;
+  inset: 0;
+  z-index: 999999999;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 40px;
+
+  overflow-y: auto;
+
+  background: rgba(2,6,23,.72);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+/* BACKDROP */
+
+.ultra-auth__backdrop{
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
+/* CARD */
+
+.ultra-auth__card{
+  position: relative;
+
+  width: min(1280px,100%);
+  min-height: 760px;
+
+  display: grid;
+  grid-template-columns: 480px 1fr;
+
+  border-radius: 32px;
+  overflow: hidden;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(7,12,25,.98),
+      rgba(2,6,23,.98)
+    );
+
+  border: 1px solid rgba(255,255,255,.08);
+
+  box-shadow:
+    0 40px 120px rgba(0,0,0,.65),
+    0 0 80px rgba(124,58,237,.18);
+
+  isolation: isolate;
+}
+
+/* LEFT SIDE */
+
+.ultra-auth__left{
+  position: relative;
+
+  padding: 70px 60px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+
+  overflow: hidden;
+
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(124,58,237,.22),
+      transparent 50%
+    );
+}
+
+/* BRANDING */
+
+.ultra-auth__branding{
+  position: relative;
+  z-index: 2;
+}
+
+.ultra-auth__logo{
+  width: 78px;
+  height: 78px;
+
+  border-radius: 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-bottom: 30px;
+
+  font-size: 34px;
+  color: #fff;
+
+  background:
+    linear-gradient(
+      135deg,
+      #7c3aed,
+      #00f0ff
+    );
+
+  box-shadow:
+    0 20px 60px rgba(124,58,237,.35);
+}
+
+.ultra-auth__branding h2{
+  font-size: 68px;
+  line-height: .95;
+
+  font-weight: 800;
+  letter-spacing: -3px;
+
+  color: #fff;
+
+  margin-bottom: 24px;
+}
+
+.ultra-auth__branding h2 span{
+  background:
+    linear-gradient(
+      135deg,
+      #00f0ff,
+      #7c3aed
+    );
+
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ultra-auth__branding p{
+  font-size: 17px;
+  line-height: 1.8;
+
+  color: #94a3b8;
+
+  max-width: 420px;
+}
+
+/* RIGHT SIDE */
+
+.ultra-auth__right{
+  position: relative;
+
+  padding: 70px 60px;
+
+  overflow-y: auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  scrollbar-width: none;
+}
+
+.ultra-auth__right::-webkit-scrollbar{
+  display: none;
+}
+
+/* FORM */
+
+.ultra-auth__form{
+  width: 100%;
+  max-width: 620px;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 22px;
+
+  position: relative;
+  z-index: 5;
+}
+
+/* AVATAR */
+
+.ultra-auth__avatar-wrap{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  gap: 14px;
+
+  margin-bottom: 8px;
+}
+
+.ultra-auth__avatar{
+  width: 110px;
+  height: 110px;
+
+  border-radius: 50%;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 38px;
+  color: #00f0ff;
+
+  cursor: pointer;
+
+  background:
+    rgba(255,255,255,.04);
+
+  border:
+    1px dashed rgba(255,255,255,.16);
+
+  transition:
+    transform .3s ease,
+    border-color .3s ease,
+    box-shadow .3s ease;
+}
+
+.ultra-auth__avatar:hover{
+  transform: scale(1.05);
+
+  border-color: #00f0ff;
+
+  box-shadow:
+    0 0 40px rgba(0,240,255,.16);
+}
+
+.ultra-auth__avatar-wrap p{
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+/* COVER */
+
+.ultra-auth__cover{
+  display: flex;
+  flex-direction: column;
+
+  gap: 10px;
+}
+
+.ultra-auth__cover label{
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+/* GRID */
+
+.ultra-auth__grid2{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+/* INPUTS */
+
+.ultra-auth__grid2 input,
+.ultra-auth__textarea{
+  width: 100%;
+
+  background:
+    rgba(255,255,255,.04);
+
+  border:
+    1px solid rgba(255,255,255,.08);
+
+  border-radius: 18px;
+
+  padding: 18px 20px;
+
+  color: #fff;
+
+  font-size: 15px;
+
+  outline: none;
+
+  transition:
+    border-color .25s ease,
+    box-shadow .25s ease,
+    transform .25s ease;
+}
+
+.ultra-auth__grid2 input::placeholder,
+.ultra-auth__textarea::placeholder{
+  color: #64748b;
+}
+
+.ultra-auth__grid2 input:focus,
+.ultra-auth__textarea:focus{
+  border-color:
+    rgba(0,240,255,.45);
+
+  box-shadow:
+    0 0 30px rgba(0,240,255,.08);
+
+  transform:
+    translateY(-2px);
+}
+
+.ultra-auth__textarea{
+  min-height: 140px;
+  resize: none;
+}
+
+/* SUBMIT BUTTON */
+
+.ultra-auth__submit{
+  height: 64px;
+
+  border: none;
+  border-radius: 20px;
+
+  font-size: 16px;
+  font-weight: 700;
+
+  color: #fff;
+
+  cursor: pointer;
+
+  background:
+    linear-gradient(
+      135deg,
+      #7c3aed,
+      #00f0ff
+    );
+
+  box-shadow:
+    0 20px 60px rgba(124,58,237,.35);
+
+  transition:
+    transform .25s ease,
+    box-shadow .25s ease;
+}
+
+.ultra-auth__submit:hover{
+  transform: translateY(-3px);
+
+  box-shadow:
+    0 30px 80px rgba(124,58,237,.5);
+}
+
+/* CLOSE BUTTON */
+
+.ultra-auth__close{
+  position: absolute;
+
+  top: 24px;
+  right: 24px;
+
+  width: 46px;
+  height: 46px;
+
+  border: none;
+  border-radius: 14px;
+
+  background:
+    rgba(255,255,255,.06);
+
+  color: #fff;
+
+  font-size: 22px;
+
+  cursor: pointer;
+
+  z-index: 50;
+
+  transition:
+    background .25s ease,
+    transform .25s ease;
+}
+
+.ultra-auth__close:hover{
+  background:
+    rgba(255,255,255,.12);
+
+  transform: rotate(90deg);
+}
+
+/* GLOW EFFECTS */
+
+.ultra-auth__glow{
+  position: absolute;
+
+  border-radius: 50%;
+
+  filter: blur(120px);
+
+  opacity: .4;
+
+  pointer-events: none;
+}
+
+.ultra-auth__glow--1{
+  width: 320px;
+  height: 320px;
+
+  background: #7c3aed;
+
+  top: -120px;
+  left: -120px;
+}
+
+.ultra-auth__glow--2{
+  width: 280px;
+  height: 280px;
+
+  background: #00f0ff;
+
+  bottom: -120px;
+  right: -120px;
+}
+
+/* VISUAL */
+
+.ultra-auth__visual{
+  position: relative;
+
+  width: 100%;
+  height: 320px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin-top: 40px;
+}
+
+/* PLANET */
+
+.ultra-auth__planet{
+  position: absolute;
+
+  width: 240px;
+  height: 240px;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle at 30% 30%,
+      #00f0ff,
+      #7c3aed 75%
+    );
+
+  box-shadow:
+    0 0 120px rgba(124,58,237,.45);
+
+  animation:
+    planetFloat 6s ease-in-out infinite;
+}
+
+/* RING */
+
+.ultra-auth__ring{
+  position: absolute;
+
+  width: 360px;
+  height: 360px;
+
+  border-radius: 50%;
+
+  border:
+    1px solid rgba(255,255,255,.08);
+
+  animation:
+    spinSlow 18s linear infinite;
+}
+
+/* FLOAT CARD */
+
+.ultra-auth__floating-card{
+  position: absolute;
+
+  right: 10px;
+  bottom: 10px;
+
+  padding: 18px 22px;
+
+  border-radius: 20px;
+
+  background:
+    rgba(255,255,255,.05);
+
+  border:
+    1px solid rgba(255,255,255,.08);
+
+  backdrop-filter: blur(20px);
+
+  color: #fff;
+}
+
+.ultra-auth__floating-card strong{
+  display: block;
+  font-size: 15px;
+}
+
+.ultra-auth__floating-card span{
+  display: block;
+
+  margin-top: 6px;
+
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+/* ANIMATIONS */
+
+@keyframes spinSlow{
+  from{
+    transform: rotate(0deg);
+  }
+
+  to{
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes planetFloat{
+  0%,100%{
+    transform: translateY(0px);
+  }
+
+  50%{
+    transform: translateY(-18px);
+  }
+}
+
+/* MOBILE */
+
+@media(max-width:980px){
+
+  .ultra-auth{
+    padding: 20px;
+  }
+
+  .ultra-auth__card{
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .ultra-auth__left{
+    display: none;
+  }
+
+  .ultra-auth__right{
+    padding: 50px 24px;
+  }
+
+  .ultra-auth__grid2{
+    grid-template-columns: 1fr;
+  }
+
+  .ultra-auth__form{
+    max-width: 100%;
+  }
+}
+
+.ultra-auth__noise{
+
+  display: none;
+}
+/* ═══════════════════════════════════════
+ULTRA MODERN AI USER MENU
+═══════════════════════════════════════ */
+.ai-user-menu{
+  position:relative;
+
+  width:auto;
+  max-width:320px;
+
+  height:74px;
+
+  display:flex;
+  align-items:center;
+  gap:14px;
+
+  padding:10px 14px;
+
+  border-radius:22px;
+
+  overflow:hidden;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(8,12,30,.95),
+      rgba(2,6,23,.95)
+    );
+
+  border:
+    1px solid rgba(255,255,255,.08);
+
+  backdrop-filter:
+    blur(20px);
+
+  box-shadow:
+    0 8px 30px rgba(0,0,0,.35);
+
+  transition:
+    transform .3s ease,
+    border-color .3s ease;
+}
+
+.ai-user-menu:hover{
+  transform:
+    translateY(-4px)
+    scale(1.01);
+
+  border-color:
+    rgba(0,240,255,.22);
+
+  box-shadow:
+    0 20px 70px rgba(0,0,0,.55),
+    0 0 80px rgba(0,240,255,.12);
+}
+
+/* GLOW */
+
+.ai-user-menu__glow{
+  position:absolute;
+
+  inset:auto;
+
+  width:180px;
+  height:180px;
+
+  right:-80px;
+  top:-80px;
+
+  border-radius:50%;
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(0,240,255,.25),
+      transparent 70%
+    );
+
+  filter:blur(40px);
+
+  pointer-events:none;
+
+  z-index:0;
+}
+
+/* AVATAR */
+
+.ai-user-menu__avatar-wrap{
+  position:relative;
+
+  flex-shrink:0;
+
+  z-index:2;
+}
+
+.ai-user-menu__avatar{
+  width:72px;
+  height:72px;
+
+  border-radius:22px;
+
+  object-fit:cover;
+
+  border:
+    2px solid rgba(255,255,255,.08);
+
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.45),
+    0 0 30px rgba(124,58,237,.22);
+
+  transition:
+    transform .35s ease,
+    box-shadow .35s ease;
+}
+.ai-user-menu__name{
+  font-size:16px;
+  font-weight:700;
+
+  color:#fff;
+
+  line-height:1;
+}
+
+.ai-user-menu__role{
+  font-size:12px;
+
+  color:#94a3b8;
+
+  margin-top:4px;
+}
+
+/* ONLINE DOT */
+
+.ai-user-menu__status{
+  position:absolute;
+
+  right:-2px;
+  bottom:-2px;
+
+  width:18px;
+  height:18px;
+
+  border-radius:50%;
+
+  background:
+    linear-gradient(
+      135deg,
+      #00ff99,
+      #00f0ff
+    );
+
+  border:
+    3px solid #020617;
+
+  box-shadow:
+    0 0 20px rgba(0,255,153,.7);
+
+  animation:
+    pulseStatus 2s infinite;
+}
+
+/* META */
+
+.ai-user-menu__meta{
+  position:relative;
+
+  display:flex;
+  flex-direction:column;
+
+  gap:5px;
+
+  z-index:2;
+
+  flex:1;
+}
+
+.ai-user-menu__name{
+  font-size:18px;
+  font-weight:700;
+
+  color:#fff;
+
+  letter-spacing:.2px;
+}
+
+.ai-user-menu__role{
+  font-size:13px;
+  font-weight:500;
+
+  color:#94a3b8;
+
+  letter-spacing:.3px;
+}
+
+/* LOGOUT BUTTON */
+.ai-user-menu__logout{
+  height:42px;
+
+  padding:0 18px;
+
+  border:none;
+  border-radius:14px;
+
+  font-size:13px;
+  font-weight:700;
+
+  white-space:nowrap;
+
+  color:#fff;
+
+  background:
+    linear-gradient(
+      135deg,
+      #7c3aed,
+      #00f0ff
+    );
+
+  cursor:pointer;
+}
+
+.ai-user-menu__logout::before{
+  content:"";
+
+  position:absolute;
+
+  inset:0;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(255,255,255,.25),
+      transparent
+    );
+
+  transform:
+    translateX(-100%);
+
+  transition:
+    transform .7s ease;
+}
+
+.ai-user-menu__logout:hover{
+  transform:
+    translateY(-2px);
+
+  box-shadow:
+    0 18px 40px rgba(0,240,255,.28);
+}
+
+.ai-user-menu__logout:hover::before{
+  transform:
+    translateX(100%);
+}
+
+/* BORDER LIGHT */
+
+.ai-user-menu::after{
+  content:"";
+
+  position:absolute;
+
+  inset:0;
+
+  border-radius:inherit;
+
+  padding:1px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(0,240,255,.3),
+      rgba(124,58,237,.3),
+      transparent
+    );
+
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  -webkit-mask-composite:xor;
+
+  mask-composite:exclude;
+
+  pointer-events:none;
+}
+
+/* ANIMATION */
+
+@keyframes pulseStatus{
+  0%{
+    box-shadow:
+      0 0 0 rgba(0,255,153,.5);
+  }
+
+  50%{
+    box-shadow:
+      0 0 18px rgba(0,255,153,.9);
+  }
+
+  100%{
+    box-shadow:
+      0 0 0 rgba(0,255,153,.5);
+  }
+}
+
+/* MOBILE */
+
+@media(max-width:600px){
+
+  .ai-user-menu{
+    width:100%;
+
+    padding:16px;
+
+    gap:14px;
+  }
+
+  .ai-user-menu__avatar{
+    width:62px;
+    height:62px;
+  }
+
+  .ai-user-menu__logout{
+    padding:0 16px;
+    height:42px;
+  }
+}
+
+
         /* ── RESPONSIVE ── */
         @media(max-width:1024px){
+          .hero{grid-template-columns:1fr;text-align:center;}
+          .hero__content{max-width:100%;}
+          .hero__btns{justify-content:center;}
+          .hero__sub{max-width:100%;margin-left:auto;margin-right:auto;}
+          .hero__3d-col{height:400px;}
           .ai-footer__body{grid-template-columns:1fr 1fr;gap:36px;}
           .footer-brand{grid-column:1/-1;}
         }
@@ -1002,7 +2247,9 @@ ex-shrink:0;}
           .ai-section{padding:72px 20px;}
           .testi-card{padding:32px 24px;}
           .cta-section{padding:72px 20px;}
+          .hero{padding:100px 20px 80px;gap:20px;}
           .hero__h1{letter-spacing:-2px;}
+          .hero__3d-col{height:300px;}
           .process-grid::before{display:none;}
           .ai-footer__body{grid-template-columns:1fr;padding:48px 24px 0;}
           .footer-brand{grid-column:auto;}
@@ -1013,10 +2260,7 @@ ex-shrink:0;}
 
       {videoOpen && <YouTubeModal videoId={DEMO_VIDEO_ID} onClose={() => setVideoOpen(false)} />}
 
-      {/* ════════════
-          ANNOUNCEMENT BAR
-          ACF Options: header_announcement, header_announcement_url
-      ════════════ */}
+      {/* ANNOUNCEMENT BAR */}
       {opts?.headerAnnouncement && (
         <div className="announce-bar">
           <span className="announce-bar__dot" />
@@ -1027,10 +2271,10 @@ ex-shrink:0;}
         </div>
       )}
 
-      {/* ════════════
-          NAV
-      ════════════ */}
+      {/* NAV */}
       <nav className={`ai-nav${scrolled ? " ai-nav--scrolled" : ""}`}>
+        
+        
         <div className="ai-nav__logo-wrap">
           <a href="/">
             {headerLogoUrl
@@ -1038,15 +2282,87 @@ ex-shrink:0;}
               : <span className="ai-nav__logo-text">⬡ Site</span>}
           </a>
         </div>
-
         <ul className="ai-nav__center">
           {opts?.headerMenu.map((item, i) => (
             <li key={i}><a href={item.url} className="ai-nav__link">{item.label}</a></li>
           ))}
         </ul>
-
         <div className="ai-nav__right">
-          <button className="ai-nav__ghost">Sign in</button>
+            {user ? (
+
+            <div className="ai-user-menu" onClick={() => setProfileOpen(true)}>
+
+                <div className="ai-user-menu__glow"></div>
+
+                <div className="ai-user-menu__avatar-wrap">
+
+                  {user.image ? (
+
+                    <img
+                      src={user.image}
+                      alt={user.name}
+                      className="ai-user-menu__avatar"
+                    />
+
+                  ) : (
+
+                    <div className="ai-user-menu__avatar-fallback">
+
+                      {user.name?.charAt(0)}
+
+                    </div>
+
+                  )}
+
+                  <div className="ai-user-menu__status"></div>
+
+                </div>
+
+                <div className="ai-user-menu__meta">
+
+                  <span className="ai-user-menu__name">
+                    {user.name}
+                  </span>
+
+                  <span className="ai-user-menu__role">
+                    AI Member
+                  </span>
+
+                </div>
+
+                <button
+                  className="ai-user-menu__logout"
+                  onClick={() => {
+
+                    localStorage.removeItem("aiUser");
+
+                    setUser(null);
+
+                  }}
+                >
+                  Logout
+                </button>
+
+              </div>
+
+            ) : (
+
+              <button
+                className="ai-nav__ghost ai-nav__ghost--premium"
+                onClick={() => setShowPopup(true)}
+              >
+                <span className="ai-nav__ghost-glow"></span>
+
+                <span className="ai-nav__ghost-text">
+                  Sign In
+                </span>
+
+              </button>
+
+            )}
+
+          
+         
           {opts?.headerButton && (
             <a href={opts.headerButton.url} target={opts.headerButton.target || "_self"}>
               <button className="ai-nav__cta">
@@ -1062,7 +2378,20 @@ ex-shrink:0;}
         </div>
       </nav>
 
-      {/* Mobile menu */}
+      {showPopup && (
+
+        <AuthPopup
+
+          onClose={() => setShowPopup(false)}
+
+          onSuccess={(data) => {
+            setUser(data);
+          }}
+
+        />
+
+      )}
+
       <div className={`ai-nav__mobile${menuOpen ? " ai-nav__mobile--open" : ""}`}>
         {opts?.headerMenu.map((item, i) => (
           <a key={i} href={item.url} className="ai-nav__mobile-link" onClick={() => setMenuOpen(false)}>{item.label}</a>
@@ -1072,10 +2401,10 @@ ex-shrink:0;}
         )}
       </div>
 
-      {/* ════════════  SECTIONS  ════════════ */}
       <main>
         {sections.map((section, index) => {
 
+          /* ── HERO with 3D ── */
           if (section.acf_fc_layout === "hero") {
             return (
               <section key={index} className="hero">
@@ -1085,6 +2414,8 @@ ex-shrink:0;}
                 <div className="hero__gradient" />
                 <div className="hero__grid" />
                 <ParticleCanvas />
+
+                {/* Left: Text Content */}
                 <div className="hero__content">
                   <div className="hero__badge">
                     <span className="hero__badge-dot" />
@@ -1093,7 +2424,7 @@ ex-shrink:0;}
                   <h1 className="hero__h1">
                     {(() => {
                       const words = (section.heading || "").split(" ");
-                      const last  = words.pop();
+                      const last = words.pop();
                       return <>{words.join(" ")} <span>{last}</span></>;
                     })()}
                   </h1>
@@ -1109,6 +2440,25 @@ ex-shrink:0;}
                     </button>
                   </div>
                   <p className="hero__note">No credit card required · 14-day free trial</p>
+                </div>
+
+                {/* Right: 3D Canvas */}
+                <div className="hero__3d-col" style={{ position: "relative" }}>
+                  <HeroCanvas3D />
+
+                  {/* Floating stat badges */}
+                  <div className="hero__stat-float" style={{ top: "12%", left: "5%" }}>
+                    <div className="hero__stat-float__num">99.9%</div>
+                    <div className="hero__stat-float__label">Uptime SLA</div>
+                  </div>
+                  <div className="hero__stat-float" style={{ bottom: "20%", right: "5%" }}>
+                    <div className="hero__stat-float__num">10ms</div>
+                    <div className="hero__stat-float__label">Avg Latency</div>
+                  </div>
+                  <div className="hero__stat-float" style={{ bottom: "8%", left: "10%" }}>
+                    <div className="hero__stat-float__num">128-bit</div>
+                    <div className="hero__stat-float__label">Encryption</div>
+                  </div>
                 </div>
               </section>
             );
@@ -1129,13 +2479,13 @@ ex-shrink:0;}
                     </div>
                     <div className="features-grid">
                       {(section.features_list ?? []).map((f: any, i: number) => (
-                        <div key={i} className="feature-card" data-reveal="fade-up" data-delay={String(i * 100)}>
+                        <TiltCard key={i} className="feature-card" data-reveal="fade-up" data-delay={String(i * 100)}>
                           <span className="feature-card__num">0{i + 1}</span>
                           <span className="feature-card__icon">{f.list?.split(" ")[0]}</span>
                           <h3 className="feature-card__title">{f.list?.replace(/^.\s/, "")}</h3>
                           <p className="feature-card__desc">{f.description}</p>
                           <div className="feature-card__line" />
-                        </div>
+                        </TiltCard>
                       ))}
                     </div>
                   </div>
@@ -1228,7 +2578,7 @@ ex-shrink:0;}
                         <div className="portfolio-card__img-wrap">
                           {p._resolvedImage
                             ? <img src={p._resolvedImage} alt={p.project_title} className="portfolio-card__img" />
-                            : <div style={{ height:"100%", background:"linear-gradient(135deg,rgba(124,58,237,.2),rgba(0,240,255,.1))" }} />}
+                            : <div style={{ height: "100%", background: "linear-gradient(135deg,rgba(124,58,237,.2),rgba(0,240,255,.1))" }} />}
                         </div>
                         <div className="portfolio-card__body">
                           {p.project_category && <span className="portfolio-card__tag">{p.project_category}</span>}
@@ -1297,9 +2647,9 @@ ex-shrink:0;}
                   <div data-reveal="fade-up" data-delay="200">
                     <FaqAccordion items={section.faq_items ?? []} />
                   </div>
-                  <p style={{ marginTop:40, fontSize:15, color:"var(--muted)" }} data-reveal="fade-up" data-delay="300">
+                  <p style={{ marginTop: 40, fontSize: 15, color: "var(--muted)" }} data-reveal="fade-up" data-delay="300">
                     Still have questions?{" "}
-                    <a href="#" style={{ color:"var(--cyan)", fontWeight:600 }}>Chat with our team →</a>
+                    <a href="#" style={{ color: "var(--cyan)", fontWeight: 600 }}>Chat with our team →</a>
                   </p>
                 </div>
               </div>
@@ -1310,12 +2660,12 @@ ex-shrink:0;}
             return (
               <div key={index} style={{ background: "var(--dark)" }}>
                 <div className="ai-section">
-                  <div data-reveal="fade-up" style={{ textAlign:"center", marginBottom:8 }}>
-                    <span className="eyebrow" style={{ justifyContent:"center" }}>Testimonials</span>
-                    <h2 className="section-title" style={{ maxWidth:"none", textAlign:"center" }}>
+                  <div data-reveal="fade-up" style={{ textAlign: "center", marginBottom: 8 }}>
+                    <span className="eyebrow" style={{ justifyContent: "center" }}>Testimonials</span>
+                    <h2 className="section-title" style={{ maxWidth: "none", textAlign: "center" }}>
                       What Our Clients Say About Our <span>AI Blockchain</span> Platform
                     </h2>
-                    <p className="section-sub" style={{ margin:"0 auto 48px", textAlign:"center" }}>
+                    <p className="section-sub" style={{ margin: "0 auto 48px", textAlign: "center" }}>
                       Don't take our word for it — hear from the teams shipping faster every day.
                     </p>
                   </div>
@@ -1333,7 +2683,7 @@ ex-shrink:0;}
                 <div className="cta-section__grid" />
                 <div className="cta-section__content">
                   <div data-reveal="fade-up">
-                    <span className="eyebrow" style={{ justifyContent:"center" }}>Get Started</span>
+                    <span className="eyebrow" style={{ justifyContent: "center" }}>Get Started</span>
                     <h2 className="cta-section__title">{section.heading}</h2>
                     <p className="cta-section__sub">{section.sub_heading}</p>
                     {btn.url && (
@@ -1351,30 +2701,10 @@ ex-shrink:0;}
         })}
       </main>
 
-      {/* ════════════════════════════════════════════════════
-          FOOTER — redesigned
-          ACF Options fields:
-            footer_logo              — image object {url}
-            footer_copy_right        — "© 2025 …"
-            footer_tagline           — short tagline under logo
-            footer_description       — brand blurb
-            footer_social[]          repeater
-              social_platform        — "Twitter"
-              social_url             — https://…
-              social_icon            — emoji or SVG string
-            footer_columns[]         repeater
-              column_title           — "Company"
-              column_links[]         repeater
-                link_label           — "About Us"
-                link_url             — /about
-            footer_newsletter_text   — newsletter pitch copy
-            footer_badge_text        — "SOC 2 · GDPR" (shown as badges)
-      ════════════════════════════════════════════════════ */}
+      {/* FOOTER */}
       <footer className="ai-footer">
         <div className="ai-footer__grid-bg" />
-
         <div className="ai-footer__body">
-          {/* Brand column */}
           <div className="footer-brand">
             {footerLogoUrl
               ? <img src={footerLogoUrl} alt="Logo" className="footer-brand__logo" />
@@ -1386,23 +2716,13 @@ ex-shrink:0;}
             <div className="footer-socials">
               {(opts?.footerSocial ?? []).map((s, i) => (
                 <a key={i} href={s.url} target="_blank" rel="noopener noreferrer"
-                  className="footer-social-btn" title={s.platform}>
-                  {s.icon}
-                </a>
+                  className="footer-social-btn" title={s.platform}>{s.icon}</a>
               ))}
-              {/* Fallback icons if no ACF data */}
               {(opts?.footerSocial ?? []).length === 0 && (
-                <>
-                  <a href="#" className="footer-social-btn" title="Twitter">𝕏</a>
-                  <a href="#" className="footer-social-btn" title="LinkedIn">in</a>
-                  <a href="#" className="footer-social-btn" title="GitHub">⌥</a>
-                  <a href="#" className="footer-social-btn" title="Discord">◈</a>
-                </>
+                <><a href="#" className="footer-social-btn">𝕏</a><a href="#" className="footer-social-btn">in</a><a href="#" className="footer-social-btn">⌥</a><a href="#" className="footer-social-btn">◈</a></>
               )}
             </div>
           </div>
-
-          {/* Nav columns from ACF */}
           {(opts?.footerColumns ?? []).map((col, ci) => (
             <div key={ci} className="footer-col">
               <p className="footer-col__title">{col.title}</p>
@@ -1413,27 +2733,22 @@ ex-shrink:0;}
               </ul>
             </div>
           ))}
-          {/* Fallback columns if no ACF data */}
           {(opts?.footerColumns ?? []).length === 0 && (
-            <>
-              {[
-                { title:"Product", links:[["Features","#"],["Pricing","#"],["Changelog","#"],["Roadmap","#"]] },
-                { title:"Company", links:[["About","#"],["Blog","#"],["Careers","#"],["Press","#"]] },
-                { title:"Legal",   links:[["Privacy","#"],["Terms","#"],["Security","#"],["Cookies","#"]] },
-              ].map((col, ci) => (
-                <div key={ci} className="footer-col">
-                  <p className="footer-col__title">{col.title}</p>
-                  <ul className="footer-col__links">
-                    {col.links.map(([label, url], li) => (
-                      <li key={li}><a href={url} className="footer-col__link">{label}</a></li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </>
+            <>{[
+              { title: "Product", links: [["Features", "#"], ["Pricing", "#"], ["Changelog", "#"], ["Roadmap", "#"]] },
+              { title: "Company", links: [["About", "#"], ["Blog", "#"], ["Careers", "#"], ["Press", "#"]] },
+              { title: "Legal", links: [["Privacy", "#"], ["Terms", "#"], ["Security", "#"], ["Cookies", "#"]] },
+            ].map((col, ci) => (
+              <div key={ci} className="footer-col">
+                <p className="footer-col__title">{col.title}</p>
+                <ul className="footer-col__links">
+                  {col.links.map(([label, url], li) => (
+                    <li key={li}><a href={url} className="footer-col__link">{label}</a></li>
+                  ))}
+                </ul>
+              </div>
+            ))}</>
           )}
-
-          {/* Newsletter column */}
           <div className="footer-newsletter">
             <p className="footer-newsletter__title">Stay Updated</p>
             <p className="footer-newsletter__text">
@@ -1442,32 +2757,22 @@ ex-shrink:0;}
             <NewsletterInput placeholder="your@email.com" />
           </div>
         </div>
-
         <div className="ai-footer__divider"><div className="ai-footer__divider-line" /></div>
-
         <div className="ai-footer__bottom">
-          <p className="ai-footer__copy">
-            {opts?.footerCopy || `© ${new Date().getFullYear()} Site Inc. All rights reserved.`}
-          </p>
+          <p className="ai-footer__copy">{opts?.footerCopy || `© ${new Date().getFullYear()} Site Inc. All rights reserved.`}</p>
           <div className="ai-footer__badges">
             {opts?.footerBadge
-              ? opts.footerBadge.split("·").map((b, i) => (
-                  <span key={i} className="ai-footer__badge">{b.trim()}</span>
-                ))
-              : <>
-                  <span className="ai-footer__badge">SOC 2 Certified</span>
-                  <span className="ai-footer__badge">GDPR Ready</span>
-                  <span className="ai-footer__badge">ISO 27001</span>
-                </>
-            }
+              ? opts.footerBadge.split("·").map((b, i) => <span key={i} className="ai-footer__badge">{b.trim()}</span>)
+              : <><span className="ai-footer__badge">SOC 2 Certified</span><span className="ai-footer__badge">GDPR Ready</span><span className="ai-footer__badge">ISO 27001</span></>}
           </div>
           <div className="ai-footer__bottom-links">
-            {opts?.headerMenu.slice(0,4).map((item, i) => (
+            {opts?.headerMenu.slice(0, 4).map((item, i) => (
               <a key={i} href={item.url} className="ai-footer__bottom-link">{item.label}</a>
             ))}
           </div>
         </div>
       </footer>
+  
     </>
   );
 }

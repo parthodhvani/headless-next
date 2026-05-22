@@ -446,6 +446,32 @@ export default function AboutPage() {
 
   return (
     <>
+      <div className="global-ai-bg">
+
+        <div className="noise-layer" />
+
+        <div className="gradient-orb orb-a" />
+        <div className="gradient-orb orb-b" />
+        <div className="gradient-orb orb-c" />
+
+        <div className="grid-floor" />
+
+        <div className="mesh-lines mesh-1" />
+        <div className="mesh-lines mesh-2" />
+
+        {[...Array(70)].map((_, i) => (
+          <span
+            key={i}
+            className="floating-particle"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `${Math.random() * 100}%`,
+              animationDelay: `${i * 0.15}s`
+            }}
+          />
+        ))}
+
+      </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Syne:wght@400;500;600;700;800&display=swap');
         *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
@@ -695,6 +721,315 @@ export default function AboutPage() {
         .ai-footer__bottom-links{display:flex;gap:20px;}
         .ai-footer__bottom-link{font-size:13px;color:rgba(255,255,255,.25);transition:color .2s;}
         .ai-footer__bottom-link:hover{color:var(--cyan);}
+
+
+         /* ═══════════════════════════════════════
+   GLOBAL AI CINEMATIC SYSTEM
+═══════════════════════════════════════ */
+
+.global-ai-bg{
+  position:fixed;
+  inset:0;
+
+  overflow:hidden;
+
+  pointer-events:none;
+
+  z-index:0;
+
+  background:
+    radial-gradient(circle at top left,
+    rgba(124,58,237,.18),
+    transparent 30%),
+
+    radial-gradient(circle at bottom right,
+    rgba(0,240,255,.12),
+    transparent 35%),
+
+    #030712;
+}
+
+/* NOISE */
+
+.noise-layer{
+  position:absolute;
+  inset:0;
+
+  opacity:.035;
+
+  background-image:url("https://grainy-gradients.vercel.app/noise.svg");
+
+  mix-blend-mode:soft-light;
+}
+
+/* GLOW ORBS */
+
+.gradient-orb{
+  position:absolute;
+  border-radius:50%;
+
+  filter:blur(140px);
+
+  opacity:.18;
+}
+
+.orb-a{
+  width:600px;
+  height:600px;
+
+  background:#7c3aed;
+
+  top:-10%;
+  left:-5%;
+
+  animation:orbFloatA 18s ease-in-out infinite;
+}
+
+.orb-b{
+  width:500px;
+  height:500px;
+
+  background:#00f0ff;
+
+  right:-5%;
+  top:30%;
+
+  animation:orbFloatB 20s ease-in-out infinite;
+}
+
+.orb-c{
+  width:400px;
+  height:400px;
+
+  background:#fb7185;
+
+  left:40%;
+  bottom:-10%;
+
+  opacity:.08;
+
+  animation:orbFloatC 24s ease-in-out infinite;
+}
+
+/* GRID */
+
+.grid-floor{
+  position:absolute;
+
+  inset:-20%;
+
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+
+  background-size:90px 90px;
+
+  transform:
+    perspective(1200px)
+    rotateX(78deg)
+    scale(2);
+
+  opacity:.25;
+
+  animation:gridDrift 20s linear infinite;
+}
+
+/* MESH */
+
+.mesh-lines{
+  position:absolute;
+
+  width:140%;
+  height:1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(0,240,255,.5),
+      transparent
+    );
+
+  filter:blur(.5px);
+
+  opacity:.4;
+}
+
+.mesh-1{
+  top:30%;
+
+  transform:rotate(-12deg);
+
+  animation:meshMove 10s linear infinite;
+}
+
+.mesh-2{
+  top:65%;
+
+  transform:rotate(8deg);
+
+  animation:meshMoveReverse 14s linear infinite;
+}
+
+/* PARTICLES */
+
+.floating-particle{
+  position:absolute;
+
+  width:3px;
+  height:3px;
+
+  border-radius:50%;
+
+  background:#00f0ff;
+
+  box-shadow:
+    0 0 10px rgba(0,240,255,.8),
+    0 0 20px rgba(0,240,255,.4);
+
+  opacity:.5;
+
+  animation:particleFloat 8s ease-in-out infinite;
+}
+
+/* GLASS EFFECT FOR SECTIONS */
+
+.about-hero,
+.ai-section,
+.about-cta,
+.ai-footer{
+  position:relative;
+  z-index:2;
+}
+
+/* OPTIONAL PREMIUM GLASS */
+
+.value-card,
+.team-card,
+.about-stat-card,
+.award-card{
+  backdrop-filter:blur(20px);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.04),
+      rgba(255,255,255,.015)
+    );
+
+  border:1px solid rgba(255,255,255,.08);
+
+  box-shadow:
+    0 10px 40px rgba(0,0,0,.3),
+    inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+/* ANIMATIONS */
+
+@keyframes orbFloatA{
+  0%,100%{
+    transform:
+      translate(0,0)
+      scale(1);
+  }
+
+  50%{
+    transform:
+      translate(80px,40px)
+      scale(1.1);
+  }
+}
+
+@keyframes orbFloatB{
+  0%,100%{
+    transform:
+      translate(0,0)
+      scale(1);
+  }
+
+  50%{
+    transform:
+      translate(-60px,-50px)
+      scale(1.15);
+  }
+}
+
+@keyframes orbFloatC{
+  0%,100%{
+    transform:
+      translate(0,0);
+  }
+
+  50%{
+    transform:
+      translate(0,-80px);
+  }
+}
+
+@keyframes gridDrift{
+  from{
+    transform:
+      perspective(1200px)
+      rotateX(78deg)
+      translateY(0)
+      scale(2);
+  }
+
+  to{
+    transform:
+      perspective(1200px)
+      rotateX(78deg)
+      translateY(120px)
+      scale(2);
+  }
+}
+
+@keyframes meshMove{
+  from{
+    transform:
+      translateX(-20%)
+      rotate(-12deg);
+  }
+
+  to{
+    transform:
+      translateX(20%)
+      rotate(-12deg);
+  }
+}
+
+@keyframes meshMoveReverse{
+  from{
+    transform:
+      translateX(20%)
+      rotate(8deg);
+  }
+
+  to{
+    transform:
+      translateX(-20%)
+      rotate(8deg);
+  }
+}
+
+@keyframes particleFloat{
+  0%,100%{
+    transform:
+      translateY(0)
+      scale(.6);
+
+    opacity:.2;
+  }
+
+  50%{
+    transform:
+      translateY(-40px)
+      scale(1.6);
+
+    opacity:1;
+  }
+}
+
 
         @media(max-width:1024px){
           .ai-footer__body{grid-template-columns:1fr 1fr;gap:36px;}
